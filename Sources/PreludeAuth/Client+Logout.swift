@@ -47,6 +47,7 @@ extension PreludeAuthClient.Impl {
         // is worse than an unrevoked server session.
         let dpopHandle = try? keyStore.get(domain: domain)
         let dpopNonce = try? keyStore.getNonce(domain: domain)
+        let dpopSkewSec = (try? keyStore.getClockSkew(domain: domain)) ?? 0
         let refreshRecord = try? refreshTokenStore.get(domain: domain)
         let refreshToken = refreshRecord?.refreshToken
 
@@ -103,7 +104,8 @@ extension PreludeAuthClient.Impl {
                 url: htu,
                 nonce: dpopNonce,
                 jti: nil,
-                now: Date()
+                now: Date(),
+                clockSkewSec: dpopSkewSec
             )
         } catch {
             if let wipeError { throw wipeError }
@@ -142,6 +144,7 @@ extension PreludeAuthClient.Impl {
         // its failure mode is identical to the synchronous ones.
         attempt { try keyStore.delete(domain: domain) }
         attempt { try keyStore.deleteNonce(domain: domain) }
+        attempt { try keyStore.deleteClockSkew(domain: domain) }
         attempt { try refreshTokenStore.delete(domain: domain) }
 
         // Server-set cookies (e.g. `did`,

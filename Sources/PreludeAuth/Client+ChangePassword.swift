@@ -18,6 +18,18 @@ extension PreludeAuthClient {
     public func changePassword(_ newPassword: RedactedString) async throws {
         try await impl.changePassword(newPassword)
     }
+
+    /// Whether the current session can call ``changePassword(_:)``
+    /// without going through step-up first — i.e. whether its
+    /// access token already carries `prld:pwd:write`.
+    ///
+    /// Call before driving a "change password" UI to decide
+    /// whether to prompt for step-up. Throws if the session
+    /// refresh fails; returns `false` when the refreshed token
+    /// lacks the scope or the claim is missing/malformed.
+    public func canChangePassword() async throws -> Bool {
+        try await impl.canChangePassword()
+    }
 }
 
 // MARK: - Implementation
@@ -54,5 +66,28 @@ extension PreludeAuthClient.Impl {
         // change the password again without re-stepping up.
         try? await invalidateSession()
         _ = try? await refresh()
+    }
+
+    func canChangePassword() async throws -> Bool {
+        // Same shape as `refreshAfterStepUp`: invalidate, drain
+        // any in-flight refresh, then mint through the inflight
+        // slot so a vanilla refresh racing to land a stale-scope
+        // token in the cache can't beat us. Invalidate-before-
+        // drain keeps `startRefresh`'s "slot empty, no await
+        // since" invariant intact.
+        try await accessTokenCache.invalidate(domain: domain)
+        await drainInflightRefresh()
+        let user = try await startRefresh(stepUpToken: nil).value
+
+        let jwt = try JWT.decode(user.accessToken)
+        guard
+            let claims = try? JSONSerialization.jsonObject(
+                with: jwt.payloadJSON
+            ) as? [String: Any],
+            let scope = claims["scope"] as? String
+        else {
+            return false
+        }
+        return scope.components(separatedBy: " ").contains("prld:pwd:write")
     }
 }

@@ -22,14 +22,28 @@ struct AutoRefreshInterceptor: Interceptor {
         // Omit `Authorization` entirely when no token is cached —
         // strict proxies reject `Bearer ` (empty) before the
         // server can return a 401, breaking the refresh path.
-        if let token = await refresher.currentAccessToken(), !token.isEmpty {
-            initialRequest.setValue("Bearer \(token)", forHTTPHeaderField: HTTPHeader.authorization)
+        let sentToken = await refresher.currentAccessToken()
+        if let sentToken, !sentToken.isEmpty {
+            initialRequest.setValue("Bearer \(sentToken)", forHTTPHeaderField: HTTPHeader.authorization)
         }
 
         let (data, response) = try await next(initialRequest)
 
         guard response.statusCode == 401 else {
             return (data, response)
+        }
+
+        // A sibling caller may have refreshed while our 401 was
+        // in flight. If the cache now holds a different token,
+        // skip invalidate+refresh — `invalidateCurrentToken` only
+        // mutates `expiresAt`, so re-invalidating here would
+        // clobber the fresh entry back to expired and force a
+        // redundant /refresh round-trip.
+        if let fresh = await refresher.currentAccessToken(),
+           !fresh.isEmpty, fresh != sentToken {
+            var retryRequest = request
+            retryRequest.setValue("Bearer \(fresh)", forHTTPHeaderField: HTTPHeader.authorization)
+            return try await next(retryRequest)
         }
 
         try await refresher.invalidateCurrentToken()

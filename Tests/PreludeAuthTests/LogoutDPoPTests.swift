@@ -48,6 +48,31 @@ final class LogoutDPoPTests: XCTestCase {
         )
     }
 
+    /// `/revoke` is signed inline (bypassing the interceptor), so
+    /// it must read the persisted clock skew from the snapshot just
+    /// like the interceptor does. Without this the proof's `iat`
+    /// stays uncorrected and a clock-drifted device gets rejected
+    /// — the exact failure mode this PR fixes elsewhere.
+    func test_revoke_carriesClockSkewCorrection() async throws {
+        let fixture = try Fixture.make(domain: domain, baseURL: baseURL, clock: clock)
+        try await fixture.prePopulate(nonce: "nonce-revoke")
+        let skewSec: TimeInterval = 45
+        try fixture.keyStore.setClockSkew(domain: domain, skew: skewSec)
+        fixture.http.install(path: "/v1/session/revoke", response: .noContent)
+
+        try await fixture.client.logout()
+
+        let req = try XCTUnwrap(fixture.http.requests(forPath: "/v1/session/revoke").first)
+        let proof = try XCTUnwrap(req.value(forHTTPHeaderField: HTTPHeader.dpop))
+        let iat = try XCTUnwrap(StepUpFixtures.decodeJWTPayload(proof)["iat"] as? Int)
+        XCTAssertEqual(
+            TimeInterval(iat),
+            Date().addingTimeInterval(skewSec).timeIntervalSince1970,
+            accuracy: 3.0,
+            "/revoke proof iat must carry the snapshotted skew"
+        )
+    }
+
     // MARK: - Epoch order: wipe → bump → /revoke
 
     /// At the moment `/revoke` is in flight, both the wipe and
@@ -172,6 +197,10 @@ private struct FailingSigningKeyStore: DPoPKeyStore {
 
     var nonceStore: DPoPNonceStore {
         inner.nonceStore
+    }
+
+    var clockSkewStore: DPoPClockSkewStore {
+        inner.clockSkewStore
     }
 
     func create(domain: String) throws -> DPoPKey {

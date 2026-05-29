@@ -97,6 +97,46 @@ final class DPoPProofTests: XCTestCase {
         )
     }
 
+    // MARK: - clockSkewSec arithmetic
+
+    /// The skew is `serverTime - localTime`; a positive value
+    /// advances `iat` into the server's frame.
+    func test_proof_iat_appliesPositiveClockSkew() throws {
+        let key = try freshKey()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let proof = try DefaultDPoPProofBuilder().create(
+            key: key, method: "POST",
+            url: XCTUnwrap(URL(string: "https://x/y")),
+            nonce: nil, jti: nil, now: now, clockSkewSec: 30
+        )
+        let iat = try XCTUnwrap(StepUpFixtures.decodeJWTPayload(proof)["iat"] as? Int)
+        XCTAssertEqual(iat, 1_700_000_030)
+    }
+
+    func test_proof_iat_appliesNegativeClockSkew() throws {
+        let key = try freshKey()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let proof = try DefaultDPoPProofBuilder().create(
+            key: key, method: "POST",
+            url: XCTUnwrap(URL(string: "https://x/y")),
+            nonce: nil, jti: nil, now: now, clockSkewSec: -45
+        )
+        let iat = try XCTUnwrap(StepUpFixtures.decodeJWTPayload(proof)["iat"] as? Int)
+        XCTAssertEqual(iat, 1_699_999_955)
+    }
+
+    func test_proof_iat_zeroClockSkewIsNoOp() throws {
+        let key = try freshKey()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let proof = try DefaultDPoPProofBuilder().create(
+            key: key, method: "POST",
+            url: XCTUnwrap(URL(string: "https://x/y")),
+            nonce: nil, jti: nil, now: now, clockSkewSec: 0
+        )
+        let iat = try XCTUnwrap(StepUpFixtures.decodeJWTPayload(proof)["iat"] as? Int)
+        XCTAssertEqual(iat, 1_700_000_000)
+    }
+
     // MARK: - End-to-end (interceptor + use_dpop_nonce retry)
 
     /// First call to a fresh domain (no cached nonce) must produce

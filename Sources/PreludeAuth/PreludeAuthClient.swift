@@ -268,9 +268,20 @@ extension PreludeAuthClient {
             return request
         }
 
+        /// Best-effort: a signals failure (network, timeout, server
+        /// error) must never block the auth flow. Anti-fraud
+        /// coverage degrades gracefully when `dispatch_id` is
+        /// missing. Cooperative cancellation still propagates so
+        /// structured concurrency stays correct.
         func dispatchSignalsIfConfigured() async throws -> String? {
             guard let signalsDispatcher else { return nil }
-            return try await signalsDispatcher.dispatch()
+            do {
+                return try await signalsDispatcher.dispatch()
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                return nil
+            }
         }
 
         /// Persist a fresh access token, correcting for observed
