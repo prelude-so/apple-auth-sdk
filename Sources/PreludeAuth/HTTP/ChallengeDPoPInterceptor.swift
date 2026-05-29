@@ -2,11 +2,13 @@ import Foundation
 
 /// Attaches a DPoP proof bound to a specific step-up challenge token.
 ///
-/// Three differences from ``DPoPInterceptor``:
+/// Differences from ``DPoPInterceptor``:
 /// - The proof's `jti` is the challenge's `jti`, not a fresh UUID,
 ///   so the server can pin the proof to the challenge.
 /// - No nonce: challenge-scoped requests are one-shot.
-/// - No retry: there is no nonce dance to retry on.
+/// - No retry. The skew correction is *read* from the keystore so
+///   one-shot proofs after the regular interceptor's first retry
+///   are pre-corrected.
 ///
 /// Uses ``DPoPKeyStore/get(domain:)`` (not ``getOrCreate``) — the
 /// challenge-issuing session has already provisioned the keypair, so
@@ -39,13 +41,15 @@ struct ChallengeDPoPInterceptor: Interceptor {
         }
 
         let method = request.httpMethod ?? "GET"
+        let skew = (try? keyStore.getClockSkew(domain: domain)) ?? 0
         let proof = try DefaultDPoPProofBuilder().create(
             key: handle,
             method: method,
             url: htu,
             nonce: nil,
             jti: jti,
-            now: Date()
+            now: Date(),
+            clockSkewSec: skew
         )
 
         var signed = request

@@ -17,19 +17,25 @@ protocol DPoPProofBuilder: Sendable {
         url: URL,
         nonce: String?,
         jti: String?,
-        now: Date
+        now: Date,
+        clockSkewSec: TimeInterval
     ) throws -> String
 }
 
 /// Production ``DPoPProofBuilder``. Stateless; safe to share.
 struct DefaultDPoPProofBuilder: DPoPProofBuilder {
+    /// ``clockSkewSec`` is `serverTime - localTime`. Applied to
+    /// ``iat`` so the claim lands in the server's frame when the
+    /// device clock has drifted. Default `0` keeps existing call
+    /// sites compiling.
     func create(
         key: DPoPKey,
         method: String,
         url: URL,
         nonce: String? = nil,
         jti: String? = nil,
-        now: Date = Date()
+        now: Date = Date(),
+        clockSkewSec: TimeInterval = 0
     ) throws -> String {
         let jwk = try key.exportPublicJWK()
         let header: [String: Any] = [
@@ -42,7 +48,7 @@ struct DefaultDPoPProofBuilder: DPoPProofBuilder {
             "jti": jti ?? UUID().uuidString.lowercased(),
             "htm": method,
             "htu": url.absoluteString,
-            "iat": Int(now.timeIntervalSince1970),
+            "iat": Int(now.addingTimeInterval(clockSkewSec).timeIntervalSince1970),
         ]
         if let nonce {
             payload["nonce"] = nonce

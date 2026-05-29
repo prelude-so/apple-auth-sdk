@@ -70,6 +70,7 @@ struct Fixture {
     func assertWiped(file: StaticString = #filePath, line: UInt = #line) async throws {
         XCTAssertNil(try keyStore.get(domain: domain), "DPoP key", file: file, line: line)
         XCTAssertNil(try keyStore.getNonce(domain: domain), "nonce", file: file, line: line)
+        XCTAssertNil(try keyStore.getClockSkew(domain: domain), "clock skew", file: file, line: line)
         XCTAssertNil(try refreshTokenStore.get(domain: domain), "refresh token", file: file, line: line)
         let cached = await accessTokenCache.getWithoutExpirationCheck(domain: domain)
         XCTAssertNil(cached, "access token", file: file, line: line)

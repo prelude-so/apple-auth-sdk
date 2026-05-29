@@ -4,8 +4,11 @@ import Foundation
 
 extension PreludeAuthClient {
     /// Profile claims of the currently-cached access token, or
-    /// `nil` if none. Ignores expiration so the app can render
-    /// the profile during a refresh.
+    /// `nil` if none. Joins any in-flight refresh first so a read
+    /// racing a customer's ``invalidateSession()`` observes the
+    /// post-refresh cache rather than the transient empty window.
+    /// Ignores expiration so the app can render the profile during
+    /// a refresh.
     public var profile: PreludeProfile? {
         get async { await impl.profile }
     }
@@ -16,9 +19,10 @@ extension PreludeAuthClient {
         get async { await impl.sessionID }
     }
 
-    /// Raw cached access token, or `nil` if none. Does not check
-    /// expiration — production code gets a fresh token wired in
-    /// automatically via ``AutoRefreshInterceptor``.
+    /// Raw cached access token, or `nil` if none. Joins any
+    /// in-flight refresh first; ignores expiration — production
+    /// code gets a fresh token wired in automatically via
+    /// ``AutoRefreshInterceptor``.
     public var accessToken: String? {
         get async { await impl.accessToken }
     }
@@ -35,14 +39,22 @@ extension PreludeAuthClient {
 // MARK: - Implementation
 
 extension PreludeAuthClient.Impl {
+    /// Coherent snapshot of the cached entry: drain any in-flight
+    /// refresh, then read the cache without an expiration check.
+    /// Closes the `invalidateSession()` → accessor race by
+    /// serialising the read against the refresh cycle. No network
+    /// when no refresh is running — this stays a cheap probe.
+    private func coherentEntry() async -> AccessTokenEntry? {
+        await drainInflightRefresh()
+        return await accessTokenCache.getWithoutExpirationCheck(domain: domain)
+    }
+
     var profile: PreludeProfile? {
         get async {
-            guard let entry = await accessTokenCache.getWithoutExpirationCheck(domain: domain) else {
-                return nil
-            }
-            guard let jwt = try? JWT.decode(entry.accessToken) else {
-                return nil
-            }
+            guard
+                let entry = await coherentEntry(),
+                let jwt = try? JWT.decode(entry.accessToken)
+            else { return nil }
             return PreludeProfile.from(jwt: jwt)
         }
     }
@@ -52,16 +64,12 @@ extension PreludeAuthClient.Impl {
     }
 
     var accessToken: String? {
-        get async {
-            await accessTokenCache.getWithoutExpirationCheck(domain: domain)?.accessToken
-        }
+        get async { await coherentEntry()?.accessToken }
     }
 
     var accessTokenExpiresAt: Date? {
         get async {
-            guard let entry = await accessTokenCache.getWithoutExpirationCheck(domain: domain) else {
-                return nil
-            }
+            guard let entry = await coherentEntry() else { return nil }
             return Date(timeIntervalSince1970: TimeInterval(entry.expiresAt))
         }
     }

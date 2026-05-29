@@ -9,9 +9,10 @@ enum DPoPKeyStoreError: Error {
 
 // MARK: - Protocol
 
-/// Persistent DPoP keypair + nonce storage, scoped by Prelude
-/// domain. Conformers supply ``backend``, ``nonceStore``, and the
-/// `create` / `getOrCreate` pair; the rest is shared.
+/// Persistent DPoP keypair + nonce + clock-skew storage, scoped by
+/// Prelude domain. Conformers supply ``backend``, ``nonceStore``,
+/// ``clockSkewStore``, and the `create` / `getOrCreate` pair; the
+/// rest is shared.
 ///
 /// `getOrCreate` is a per-conformer requirement (not a default
 /// extension) so each store owns its creation lock as a `private`
@@ -30,6 +31,7 @@ enum DPoPKeyStoreError: Error {
 protocol DPoPKeyStore: Sendable {
     var backend: KeychainBackend { get }
     var nonceStore: DPoPNonceStore { get }
+    var clockSkewStore: DPoPClockSkewStore { get }
 
     func create(domain: String) throws -> DPoPKey
     func get(domain: String) throws -> DPoPKey?
@@ -38,6 +40,9 @@ protocol DPoPKeyStore: Sendable {
     func getNonce(domain: String) throws -> String?
     func setNonce(domain: String, nonce: String) throws
     func deleteNonce(domain: String) throws
+    func getClockSkew(domain: String) throws -> TimeInterval?
+    func setClockSkew(domain: String, skew: TimeInterval) throws
+    func deleteClockSkew(domain: String) throws
 }
 
 extension DPoPKeyStore {
@@ -101,6 +106,18 @@ extension DPoPKeyStore {
 
     func deleteNonce(domain: String) throws {
         try nonceStore.delete(domain: domain)
+    }
+
+    func getClockSkew(domain: String) throws -> TimeInterval? {
+        try clockSkewStore.get(domain: domain)
+    }
+
+    func setClockSkew(domain: String, skew: TimeInterval) throws {
+        try clockSkewStore.set(domain: domain, skew: skew)
+    }
+
+    func deleteClockSkew(domain: String) throws {
+        try clockSkewStore.delete(domain: domain)
     }
 }
 

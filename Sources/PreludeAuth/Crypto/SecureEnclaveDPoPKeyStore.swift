@@ -6,6 +6,7 @@ import Security
 struct SecureEnclaveDPoPKeyStore: DPoPKeyStore {
     let backend: KeychainBackend
     let nonceStore: DPoPNonceStore
+    let clockSkewStore: DPoPClockSkewStore
 
     /// Serialises ``getOrCreate(domain:)`` so concurrent first-time
     /// callers don't both reach `create`. Per-instance: in
@@ -16,6 +17,7 @@ struct SecureEnclaveDPoPKeyStore: DPoPKeyStore {
     init(backend: KeychainBackend = DefaultKeychainBackend()) {
         self.backend = backend
         nonceStore = DPoPNonceStore(backend: backend)
+        clockSkewStore = DPoPClockSkewStore(backend: backend)
     }
 
     func create(domain: String) throws -> DPoPKey {

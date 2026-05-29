@@ -71,6 +71,31 @@ final class StepUpHeadersTests: XCTestCase {
         )
     }
 
+    /// Persisted clock skew on the keystore must flow through to
+    /// the challenge proof's `iat`. The challenge interceptor
+    /// reads the same field the regular DPoP retry path persisted
+    /// earlier.
+    func test_submitStepUpOTP_dpopProof_appliesPersistedClockSkew() async throws {
+        let fixture = try Fixture.make(domain: domain, baseURL: baseURL, clock: clock)
+        try await fixture.prePopulate()
+        installLoop(fixture: fixture)
+        let persistedSkew: TimeInterval = 45
+        try fixture.keyStore.setClockSkew(domain: domain, skew: persistedSkew)
+
+        let challenge = try await fixture.client.requestStepUp(scope: "prld:pwd:write")
+        _ = try? await fixture.client.submitStepUpOTP(challenge, code: "123456")
+
+        let req = try XCTUnwrap(fixture.http.requests(forPath: "/v1/session/otp/check").last)
+        let proof = try XCTUnwrap(req.value(forHTTPHeaderField: HTTPHeader.dpop))
+        let iat = try XCTUnwrap(StepUpFixtures.decodeJWTPayload(proof)["iat"] as? Int)
+        XCTAssertEqual(
+            TimeInterval(iat),
+            Date().addingTimeInterval(persistedSkew).timeIntervalSince1970,
+            accuracy: 3.0,
+            "challenge proof iat must carry the persisted skew"
+        )
+    }
+
     // MARK: - Helpers
 
     /// Loop /otp/check back to the same OTP step so the post-
