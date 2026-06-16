@@ -13,13 +13,20 @@ struct HTTPResponse {
 struct HTTPClient {
     private let session: HTTPSession
     private let clock: NowProvider
+    /// Interceptors appended after per-call ones so they end up
+    /// innermost in the chain — they add headers closest to the
+    /// wire. Wired by ``PreludeAuthClient/Impl`` so every session
+    /// request carries ``HTTPHeader/deviceID``.
+    private let defaultInterceptors: [Interceptor]
 
     init(
         session: HTTPSession = URLSessionHTTPSession(),
-        clock: @escaping NowProvider = defaultNowProvider
+        clock: @escaping NowProvider = defaultNowProvider,
+        defaultInterceptors: [Interceptor] = []
     ) {
         self.session = session
         self.clock = clock
+        self.defaultInterceptors = defaultInterceptors
     }
 
     /// Raw response — does not map status codes.
@@ -27,7 +34,7 @@ struct HTTPClient {
         _ request: URLRequest,
         interceptors: [Interceptor] = []
     ) async throws -> HTTPResponse {
-        let send = composeInterceptors(interceptors, baseSession: session)
+        let send = composeInterceptors(interceptors + defaultInterceptors, baseSession: session)
         let (data, response) = try await send(request)
         return HTTPResponse(data: data, response: response, timeDiffSec: timeDiffSec(from: response))
     }

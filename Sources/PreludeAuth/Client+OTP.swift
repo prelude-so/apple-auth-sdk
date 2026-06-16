@@ -47,6 +47,23 @@ extension PreludeAuthClient.Impl {
         try await httpClient.sendExpectingNoBody(request)
     }
 
+    /// Trigger OTP delivery for an in-flight challenge (`POST /otp`).
+    /// Unauthenticated: the challenge token in the body identifies the
+    /// caller and already carries its PKCE binding, so no DPoP.
+    func sendOTP(challengeToken: String) async throws {
+        let dispatchID = try await dispatchSignalsIfConfigured()
+
+        var request = buildRequest(path: "otp")
+        request.httpBody = try JSONEncoder().encode(
+            SendOTPRequestBody(
+                challengeToken: challengeToken,
+                dispatchID: dispatchID
+            )
+        )
+
+        try await httpClient.sendExpectingNoBody(request)
+    }
+
     func checkOTP(_ code: String) async throws -> PreludeUser {
         var request = buildRequest(path: "otp/check")
         request.httpBody = try JSONEncoder().encode(CheckOTPRequestBody(code: code))
@@ -90,7 +107,16 @@ extension PreludeAuthClient.Impl {
         // bail before writing.
         let startEpoch = sessionEpoch
 
+        // Carry over a refresh token from a previous session, if any, so the
+        // server can revoke that session once the new one is established and
+        // avoid leaving it dangling across a re-login. Captured before the
+        // round-trip, since the response rotates the stored token below.
+        let previousRefreshToken = try refreshTokenStore.get(domain: domain)?.refreshToken
+
         var request = buildRequest(path: "login/finalize")
+        if let previousRefreshToken, !previousRefreshToken.isEmpty {
+            request.setValue(previousRefreshToken, forHTTPHeaderField: HTTPHeader.refreshToken)
+        }
         request.httpBody = try JSONEncoder().encode(
             FinalizeLoginRequestBody(
                 challengeToken: challengeToken,

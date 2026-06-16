@@ -41,7 +41,8 @@ public struct PreludeAuthClient: Sendable {
             clock: defaultNowProvider,
             keyStore: DPoPKeyStoreFactory.makeDefault(),
             refreshTokenStore: RefreshTokenStore(),
-            accessTokenCache: AccessTokenCache()
+            accessTokenCache: AccessTokenCache(),
+            deviceIDStore: DeviceIDStore()
         )
     }
 
@@ -55,7 +56,8 @@ public struct PreludeAuthClient: Sendable {
         clock: @escaping NowProvider,
         keyStore: DPoPKeyStore,
         refreshTokenStore: RefreshTokenStore,
-        accessTokenCache: AccessTokenCache
+        accessTokenCache: AccessTokenCache,
+        deviceIDStore: DeviceIDStore
     ) throws {
         impl = try Impl(
             baseURL: baseURL,
@@ -66,7 +68,8 @@ public struct PreludeAuthClient: Sendable {
             clock: clock,
             keyStore: keyStore,
             refreshTokenStore: refreshTokenStore,
-            accessTokenCache: accessTokenCache
+            accessTokenCache: accessTokenCache,
+            deviceIDStore: deviceIDStore
         )
     }
 
@@ -172,7 +175,8 @@ extension PreludeAuthClient {
             clock: @escaping NowProvider,
             keyStore: DPoPKeyStore,
             refreshTokenStore: RefreshTokenStore,
-            accessTokenCache: AccessTokenCache
+            accessTokenCache: AccessTokenCache,
+            deviceIDStore: DeviceIDStore
         ) throws {
             let derivedDomain: String
             if let hostOverride, !hostOverride.isEmpty {
@@ -190,7 +194,16 @@ extension PreludeAuthClient {
             self.signalsDispatcher = signalsDispatcher
             self.timeout = timeout
             self.baseURL = baseURL.appendingPathComponent("v1/session")
-            httpClient = HTTPClient(session: httpSession, clock: clock)
+            // Device-id is wired as a default interceptor so every
+            // session request carries `X-Device-Id` without per-
+            // callsite plumbing.
+            httpClient = HTTPClient(
+                session: httpSession,
+                clock: clock,
+                defaultInterceptors: [
+                    DeviceIDInterceptor(domain: derivedDomain, store: deviceIDStore),
+                ]
+            )
             self.keyStore = keyStore
             self.refreshTokenStore = refreshTokenStore
             self.accessTokenCache = accessTokenCache
