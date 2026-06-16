@@ -14,7 +14,7 @@ enum PreludeAuthSDK {
     /// Semantic version of the PreludeAuth package. Bumped at
     /// release time and included in the `User-Agent` of every
     /// outgoing request.
-    static let version = "0.4.0"
+    static let version = "0.5.0"
 
     /// `User-Agent` value attached to every outgoing request.
     static let userAgent: String = {

@@ -4,6 +4,32 @@ Notable changes to `PreludeAuth` (the Prelude Apple Auth SDK).
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-06-16
+
+### Added
+- Social login. New `PreludeAuthSocial` product with
+  `loginWithOAuth(_:)`, which presents the provider in a system
+  web authentication session. The core product gains
+  `initiateOAuthLogin(_:)` / `finalizeOAuthLogin(_:challengeToken:)`
+  for apps that present the web session themselves. An unverified
+  provider email returns `.otpRequired` and completes through the
+  existing OTP check.
+- `cancelled` error, thrown when the person dismisses the web
+  authentication session.
+- `samlLoginRequired` error, plus typed mapping of SAML connection
+  states to `notFound` / `forbidden` that previously fell through
+  to `generic`.
+
+### Changed
+- Every request now carries a stable per-install `X-Device-Id`.
+  The id is created lazily and persisted in the Keychain
+  (device-only, excluded from iCloud and backups), so a restored
+  device gets a fresh id.
+- Re-login forwards the prior session's refresh token on
+  `login/finalize` so the server can revoke the old session
+  instead of leaving it dangling. A first login sends no such
+  header.
+
 ## [0.4.0] - 2026-05-29
 
 ### Added

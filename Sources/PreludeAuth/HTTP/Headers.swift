@@ -12,6 +12,7 @@ enum HTTPHeader {
     static let dpop = "DPoP"
     static let dpopNonce = "DPoP-Nonce"
 
+    static let deviceID = "X-Device-Id"
     static let refreshToken = "X-Refresh-Token"
     static let refreshTokenExpiresAt = "X-Refresh-Token-Expires-At"
 }

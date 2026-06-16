@@ -150,6 +150,7 @@ final class LogoutDPoPTests: XCTestCase {
         let failingKeyStore = FailingSigningKeyStore(inner: inner)
         let refreshTokenStore = RefreshTokenStore(keychain: backend)
         let accessTokenCache = AccessTokenCache(clock: clock, keychain: backend)
+        let deviceIDStore = DeviceIDStore(keychain: backend)
         let http = StubHTTPSession()
 
         let client = try PreludeAuthClient(
@@ -157,12 +158,13 @@ final class LogoutDPoPTests: XCTestCase {
             timeout: 1, httpSession: http, clock: clock,
             keyStore: failingKeyStore,
             refreshTokenStore: refreshTokenStore,
-            accessTokenCache: accessTokenCache
+            accessTokenCache: accessTokenCache,
+            deviceIDStore: deviceIDStore
         )
         return Fixture(
             client: client, http: http, keyStore: inner,
             refreshTokenStore: refreshTokenStore, accessTokenCache: accessTokenCache,
-            domain: domain, clock: clock
+            deviceIDStore: deviceIDStore, domain: domain, clock: clock
         )
     }
 

@@ -137,7 +137,7 @@ extension PreludeAuthClient.Impl {
                 "Cannot send OTP for a blocked step-up challenge"
             )
         }
-        try await sendStepUpOTPInternal(challengeToken: challenge.token)
+        try await sendOTP(challengeToken: challenge.token)
     }
 
     @discardableResult
@@ -217,23 +217,6 @@ extension PreludeAuthClient.Impl {
         try await accessTokenCache.invalidate(domain: domain)
         await drainInflightRefresh()
         return try await startRefresh(stepUpToken: challengeToken).value
-    }
-
-    /// Trigger OTP delivery for an in-flight challenge.
-    /// Unauthenticated: the challenge token in the body identifies
-    /// the caller; no DPoP.
-    private func sendStepUpOTPInternal(challengeToken: String) async throws {
-        let dispatchID = try await dispatchSignalsIfConfigured()
-
-        var request = buildRequest(path: "otp")
-        request.httpBody = try JSONEncoder().encode(
-            StepUpOTPCreateRequestBody(
-                challengeToken: challengeToken,
-                dispatchID: dispatchID
-            )
-        )
-
-        try await httpClient.sendExpectingNoBody(request)
     }
 }
 

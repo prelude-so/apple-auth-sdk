@@ -79,6 +79,77 @@ final class OTPLoginHeadersTests: XCTestCase {
         }
     }
 
+    // MARK: - Previous-session refresh token forwarding
+
+    /// Re-login while a previous session's refresh token is still on
+    /// disk: `/login/finalize` forwards it as `X-Refresh-Token` so the
+    /// server can revoke the old session instead of leaving it dangling.
+    func test_otpLogin_forwardsPreviousRefreshToken_onFinalize() async throws {
+        let fixture = try makeFixture()
+        try fixture.refreshTokenStore.set(
+            domain: domain,
+            record: RefreshTokenRecord(
+                refreshToken: "previous-refresh",
+                refreshTokenExpiresAt: nil
+            )
+        )
+
+        fixture.http.install(
+            path: "/v1/session/otp/check",
+            response: .json(["challenge_token": "challenge-abc"])
+        )
+        fixture.http.install(
+            path: "/v1/session/login/finalize",
+            response: .json(
+                [
+                    "access_token": jwt,
+                    "expires_at": Int(clock().timeIntervalSince1970) + 3600,
+                ],
+                headers: [HTTPHeader.refreshToken: "refresh-v1"]
+            )
+        )
+
+        _ = try await fixture.client.checkOTP("123456")
+
+        let finalize = fixture.http.requests(forPath: "/v1/session/login/finalize")
+        XCTAssertEqual(finalize.count, 1)
+        XCTAssertEqual(
+            finalize.first?.value(forHTTPHeaderField: HTTPHeader.refreshToken),
+            "previous-refresh",
+            "/login/finalize must forward the prior session's refresh token"
+        )
+    }
+
+    /// First login on a clean device: nothing to revoke, so
+    /// `/login/finalize` must not carry an `X-Refresh-Token` header.
+    func test_otpLogin_omitsRefreshTokenHeader_whenNoPriorSession() async throws {
+        let fixture = try makeFixture()
+
+        fixture.http.install(
+            path: "/v1/session/otp/check",
+            response: .json(["challenge_token": "challenge-abc"])
+        )
+        fixture.http.install(
+            path: "/v1/session/login/finalize",
+            response: .json(
+                [
+                    "access_token": jwt,
+                    "expires_at": Int(clock().timeIntervalSince1970) + 3600,
+                ],
+                headers: [HTTPHeader.refreshToken: "refresh-v1"]
+            )
+        )
+
+        _ = try await fixture.client.checkOTP("123456")
+
+        let finalize = fixture.http.requests(forPath: "/v1/session/login/finalize")
+        XCTAssertEqual(finalize.count, 1)
+        XCTAssertNil(
+            finalize.first?.value(forHTTPHeaderField: HTTPHeader.refreshToken),
+            "/login/finalize must not carry X-Refresh-Token without a prior session"
+        )
+    }
+
     // MARK: - DPoP nonce harvest
 
     /// `/login/finalize` is the first DPoP-signed hop in OTP login.

@@ -90,7 +90,7 @@ extension PreludeAuthClient.Impl {
         // credentials; otherwise the next refresh would hit a
         // server-revoked token and silently log the user out
         // anyway.
-        guard PreludeAuthClient.Impl.shouldWipeAfterRevoke(
+        guard Self.shouldWipeAfterRevoke(
             target: target,
             currentSessionID: snapshotSessionID
         ) else { return }

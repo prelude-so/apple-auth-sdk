@@ -437,7 +437,7 @@ struct StepUpRequestResponse: Decodable {
     }
 }
 
-struct StepUpOTPCreateRequestBody: Encodable {
+struct SendOTPRequestBody: Encodable {
     var challengeToken: String
     var dispatchID: String?
 

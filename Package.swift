@@ -12,11 +12,15 @@ let package = Package(
             name: "PreludeAuth",
             targets: ["PreludeAuth"]
         ),
+        .library(
+            name: "PreludeAuthSocial",
+            targets: ["PreludeAuthSocial"]
+        ),
     ],
     dependencies: [
         .package(
             url: "https://github.com/prelude-so/apple-sdk.git",
-            exact: "0.5.1"
+            exact: "0.6.0"
         ),
     ],
     targets: [
@@ -25,6 +29,10 @@ let package = Package(
             dependencies: [
                 .product(name: "Prelude", package: "apple-sdk"),
             ]
+        ),
+        .target(
+            name: "PreludeAuthSocial",
+            dependencies: ["PreludeAuth"]
         ),
     ]
 )

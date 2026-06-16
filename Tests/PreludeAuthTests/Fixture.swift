@@ -10,6 +10,7 @@ struct Fixture {
     let keyStore: SoftwareDPoPKeyStore
     let refreshTokenStore: RefreshTokenStore
     let accessTokenCache: AccessTokenCache
+    let deviceIDStore: DeviceIDStore
     let domain: String
     let clock: NowProvider
 
@@ -22,6 +23,7 @@ struct Fixture {
         let keyStore = SoftwareDPoPKeyStore(backend: backend)
         let refreshTokenStore = RefreshTokenStore(keychain: backend)
         let accessTokenCache = AccessTokenCache(clock: clock, keychain: backend)
+        let deviceIDStore = DeviceIDStore(keychain: backend)
         let http = StubHTTPSession()
 
         let client = try PreludeAuthClient(
@@ -33,7 +35,8 @@ struct Fixture {
             clock: clock,
             keyStore: keyStore,
             refreshTokenStore: refreshTokenStore,
-            accessTokenCache: accessTokenCache
+            accessTokenCache: accessTokenCache,
+            deviceIDStore: deviceIDStore
         )
 
         return Self(
@@ -42,6 +45,7 @@ struct Fixture {
             keyStore: keyStore,
             refreshTokenStore: refreshTokenStore,
             accessTokenCache: accessTokenCache,
+            deviceIDStore: deviceIDStore,
             domain: domain,
             clock: clock
         )

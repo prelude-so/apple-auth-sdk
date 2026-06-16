@@ -31,6 +31,8 @@ public enum PreludeAuthError: Error, Sendable {
     /// The current session could not be refreshed.
     case refreshFailed(String)
     case timeout
+    /// The person dismissed the login UI before completing it.
+    case cancelled
     case invalidConfiguration(String)
     /// Password rejected by the server's policy. Distinct from
     /// ``unauthorized(_:)`` ("wrong password").
@@ -45,6 +47,10 @@ public enum PreludeAuthError: Error, Sendable {
     /// Resource state conflicts with the request (e.g. duplicate
     /// identifier on sign-up).
     case conflict(String)
+    /// OTP or other login method refused because the identifier's
+    /// email domain is enforced to use SAML SSO. Recover by
+    /// restarting the flow via the SAML initiate endpoint.
+    case samlLoginRequired(String)
     case network(underlying: Error)
     /// Error code not recognised by the SDK.
     case generic(code: String, message: String)
@@ -100,11 +106,16 @@ extension PreludeAuthError {
              "invalid_verify_configuration",
              "suspended_account",
              "invalid_api_key",
-             "email_verification_not_allowed":
+             "email_verification_not_allowed",
+             "saml_connection_disabled":
             return .forbidden(message)
         case "insufficient_scope":
             return .insufficientScope(message)
-        case "not_found":
+        case "saml_login_required":
+            return .samlLoginRequired(message)
+        case "not_found",
+             "saml_connection_not_configured",
+             "saml_no_connection_for_email":
             return .notFound(message)
         case "conflict", "identifier_already_exists":
             return .conflict(message)
@@ -139,6 +150,8 @@ extension PreludeAuthError: LocalizedError {
             return "RefreshFailed: \(message)"
         case .timeout:
             return "Timeout"
+        case .cancelled:
+            return "Cancelled"
         case let .invalidConfiguration(message):
             return "InvalidConfiguration: \(message)"
         case let .invalidPassword(message):
@@ -151,6 +164,8 @@ extension PreludeAuthError: LocalizedError {
             return "NotFound: \(message)"
         case let .conflict(message):
             return "Conflict: \(message)"
+        case let .samlLoginRequired(message):
+            return "SAMLLoginRequired: \(message)"
         case let .network(underlying):
             return "Network: \(underlying.localizedDescription)"
         case let .generic(code, message):
