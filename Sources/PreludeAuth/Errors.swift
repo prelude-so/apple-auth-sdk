@@ -51,6 +51,16 @@ public enum PreludeAuthError: Error, Sendable {
     /// email domain is enforced to use SAML SSO. Recover by
     /// restarting the flow via the SAML initiate endpoint.
     case samlLoginRequired(String)
+    /// App has no PasskeyConfig set (Relying Party identity is
+    /// missing). Route the user to a different MFA factor.
+    case passkeyNotConfigured(String)
+    /// Server rejected the attestation from the registration
+    /// ceremony — bad challenge, bad origin, or malformed response.
+    case passkeyRegistrationFailed(String)
+    /// verify_passkey step cannot be driven (no credentials,
+    /// assertion failed, or no PasskeyConfig). Fall back to a
+    /// different step (e.g. SMS OTP).
+    case passkeyStepUnavailable(String)
     case network(underlying: Error)
     /// Error code not recognised by the SDK.
     case generic(code: String, message: String)
@@ -113,6 +123,12 @@ extension PreludeAuthError {
             return .insufficientScope(message)
         case "saml_login_required":
             return .samlLoginRequired(message)
+        case "passkey_not_configured":
+            return .passkeyNotConfigured(message)
+        case "passkey_registration_failed":
+            return .passkeyRegistrationFailed(message)
+        case "passkey_step_unavailable":
+            return .passkeyStepUnavailable(message)
         case "not_found",
              "saml_connection_not_configured",
              "saml_no_connection_for_email":
@@ -166,6 +182,12 @@ extension PreludeAuthError: LocalizedError {
             return "Conflict: \(message)"
         case let .samlLoginRequired(message):
             return "SAMLLoginRequired: \(message)"
+        case let .passkeyNotConfigured(message):
+            return "PasskeyNotConfigured: \(message)"
+        case let .passkeyRegistrationFailed(message):
+            return "PasskeyRegistrationFailed: \(message)"
+        case let .passkeyStepUnavailable(message):
+            return "PasskeyStepUnavailable: \(message)"
         case let .network(underlying):
             return "Network: \(underlying.localizedDescription)"
         case let .generic(code, message):

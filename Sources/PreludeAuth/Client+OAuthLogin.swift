@@ -33,9 +33,24 @@ public enum FinalizeOAuthLoginResult: Sendable {
     case loggedIn(PreludeUser)
 
     /// The provider returned an unverified email; the server sent a
-    /// one-time code to `email`. The login completes once the code
-    /// is verified.
-    case otpRequired(challengeToken: String, email: String?)
+    /// one-time code to `email`. Redeem `challenge` with
+    /// ``PreludeAuthClient/checkOAuthEmailOTP(_:resuming:)`` to
+    /// complete the login.
+    case otpRequired(_ challenge: OAuthEmailChallenge, email: String?)
+}
+
+/// An OAuth-email-link verification awaiting its one-time code.
+/// Returned in ``FinalizeOAuthLoginResult/otpRequired(_:email:)`` and
+/// redeemed by ``PreludeAuthClient/checkOAuthEmailOTP(_:resuming:)``.
+///
+/// Value-typed so it carries its own verification token: concurrent
+/// logins never clash, and completion doesn't depend on shared
+/// cookies. Safe to log — the token is redacted from every textual
+/// surface.
+public struct OAuthEmailChallenge: Sendable {
+    /// Verification token issued when the code was sent, replayed as
+    /// the `X-Verification-Token` header on the check.
+    let verificationToken: String
 }
 
 /// An in-progress OAuth login. Returned by
@@ -73,6 +88,20 @@ extension PreludeAuthClient {
         challengeToken: String
     ) async throws -> FinalizeOAuthLoginResult {
         try await impl.finalizeOAuthLogin(context, challengeToken: challengeToken)
+    }
+
+    /// Submit the email OTP for an OAuth-link `challenge` and establish
+    /// the session.
+    ///
+    /// Pass the ``OAuthEmailChallenge`` from a
+    /// ``FinalizeOAuthLoginResult/otpRequired(_:email:)`` result, which
+    /// is returned when the provider's email must be proven before the
+    /// login can complete.
+    public func checkOAuthEmailOTP(
+        _ code: String,
+        resuming challenge: OAuthEmailChallenge
+    ) async throws -> PreludeUser {
+        try await impl.checkOAuthEmailOTP(code, resuming: challenge)
     }
 }
 
@@ -132,13 +161,21 @@ extension PreludeAuthClient.Impl {
         let link = try? JSONDecoder().decode(OAuthLinkClaims.self, from: jwt.payloadJSON)
 
         if link?.grantMode == "oauth-email-link" {
-            // Unverified provider email: deliver the verification code,
-            // then hand the challenge back so the caller can drive its
-            // OTP screen. The PKCE verifier isn't used on this path —
-            // the post-OTP login finalizes without it.
-            try await sendOTP(challengeToken: challengeToken)
+            // Unverified provider email: deliver the verification code
+            // and hand back a resumable challenge so the caller can
+            // drive its OTP screen. The verification token — not the
+            // challenge token — carries the flow's state through to the
+            // check; the PKCE verifier isn't used on this path.
+            guard let verificationToken = try await sendOTP(challengeToken: challengeToken),
+                  !verificationToken.isEmpty
+            else {
+                throw PreludeAuthError.generic(
+                    code: "missing_verification_token",
+                    message: "otp response did not include a verification token"
+                )
+            }
             return .otpRequired(
-                challengeToken: challengeToken,
+                OAuthEmailChallenge(verificationToken: verificationToken),
                 email: link?.metadata?.oauthEmail
             )
         }
@@ -148,6 +185,35 @@ extension PreludeAuthClient.Impl {
             codeVerifier: context.codeVerifier
         )
         return .loggedIn(user)
+    }
+
+    func checkOAuthEmailOTP(
+        _ code: String,
+        resuming challenge: OAuthEmailChallenge
+    ) async throws -> PreludeUser {
+        // The verification token issued at `/otp` carries the OAuth-link
+        // state; replay it so `/otp/check` resolves the flow without a
+        // session or DPoP. Login finalizes one step later.
+        try await finalizeOTPCheck(
+            code: code,
+            verificationToken: challenge.verificationToken
+        )
+    }
+}
+
+// MARK: - Logging hygiene
+
+extension OAuthEmailChallenge: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    public var description: String {
+        "OAuthEmailChallenge(verificationToken: <redacted>)"
+    }
+
+    public var debugDescription: String {
+        description
+    }
+
+    public var customMirror: Mirror {
+        Mirror(self, children: ["verificationToken": "<redacted>"], displayStyle: .struct)
     }
 }
 
