@@ -189,7 +189,14 @@ final class OAuthLoginTests: XCTestCase {
 
     func test_finalize_oauthEmailLink_sendsOTP_andReturnsOtpRequired() async throws {
         let fixture = try Fixture.make(domain: domain, baseURL: baseURL, clock: clock)
-        fixture.http.install(path: "/v1/session/otp", response: .noContent)
+        fixture.http.install(
+            path: "/v1/session/otp",
+            response: StubHTTPSession.CannedResponse(
+                statusCode: 204,
+                body: Data(),
+                headers: [HTTPHeader.verificationToken: "verify-token-1"]
+            )
+        )
         let token = try makeToken(payload: [
             "grant_mode": "oauth-email-link",
             "metadata": ["oauth_email": "person@example.com"],
@@ -197,11 +204,13 @@ final class OAuthLoginTests: XCTestCase {
 
         let result = try await fixture.client.finalizeOAuthLogin(anyContext(), challengeToken: token)
 
-        guard case let .otpRequired(challengeToken, email) = result else {
+        guard case let .otpRequired(challenge, email) = result else {
             XCTFail("expected otpRequired")
             return
         }
-        XCTAssertEqual(challengeToken, token)
+        // The resumable handle captures the verification token from the
+        // /otp response, not the challenge token.
+        XCTAssertEqual(challenge.verificationToken, "verify-token-1")
         XCTAssertEqual(email, "person@example.com")
 
         // The verification code is delivered via /otp, carrying the
@@ -212,5 +221,87 @@ final class OAuthLoginTests: XCTestCase {
         )
         XCTAssertEqual(otpBody["challenge_token"] as? String, token)
         XCTAssertEqual(fixture.http.requestCount(forPath: "/v1/session/login/finalize"), 0)
+    }
+
+    func test_finalize_oauthEmailLink_missingVerificationToken_throws() async throws {
+        let fixture = try Fixture.make(domain: domain, baseURL: baseURL, clock: clock)
+        // /otp succeeds but omits the verification token header.
+        fixture.http.install(path: "/v1/session/otp", response: .noContent)
+        let token = try makeToken(payload: ["grant_mode": "oauth-email-link"])
+
+        do {
+            _ = try await fixture.client.finalizeOAuthLogin(anyContext(), challengeToken: token)
+            XCTFail("expected generic error")
+        } catch let PreludeAuthError.generic(code, _) {
+            XCTAssertEqual(code, "missing_verification_token")
+        }
+    }
+
+    func test_checkOAuthEmailOTP_replaysVerificationToken_andFinalizes() async throws {
+        let fixture = try Fixture.make(domain: domain, baseURL: baseURL, clock: clock)
+        fixture.http.install(
+            path: "/v1/session/otp",
+            response: StubHTTPSession.CannedResponse(
+                statusCode: 204,
+                body: Data(),
+                headers: [HTTPHeader.verificationToken: "verify-token-1"]
+            )
+        )
+        let linkToken = try makeToken(payload: [
+            "grant_mode": "oauth-email-link",
+            "metadata": ["oauth_email": "person@example.com"],
+        ])
+        let loginToken = try makeToken(payload: ["sub": "user-1"])
+        fixture.http.install(
+            path: "/v1/session/otp/check",
+            response: .json(["challenge_token": loginToken])
+        )
+        fixture.http.install(
+            path: "/v1/session/login/finalize",
+            response: .json([
+                "access_token": accessJWT,
+                "expires_at": Int(clock().timeIntervalSince1970) + 3600,
+            ])
+        )
+
+        guard case let .otpRequired(challenge, _) = try await fixture.client.finalizeOAuthLogin(
+            anyContext(), challengeToken: linkToken
+        ) else {
+            XCTFail("expected otpRequired")
+            return
+        }
+
+        let user = try await fixture.client.checkOAuthEmailOTP("123456", resuming: challenge)
+        XCTAssertEqual(user.profile.userID, "user-1")
+
+        // The check replays the captured verification token and stays
+        // session-less (no DPoP); the body authenticates via that token,
+        // not a challenge token.
+        let checkReq = try XCTUnwrap(fixture.http.requests(forPath: "/v1/session/otp/check").first)
+        XCTAssertEqual(checkReq.value(forHTTPHeaderField: HTTPHeader.verificationToken), "verify-token-1")
+        XCTAssertNil(checkReq.value(forHTTPHeaderField: HTTPHeader.dpop))
+        let checkBody = try Self.json(checkReq.httpBody)
+        XCTAssertEqual(checkBody["code"] as? String, "123456")
+        XCTAssertNil(checkBody["challenge_token"])
+
+        // login/finalize establishes the DPoP-bound session.
+        let finalizeReq = try XCTUnwrap(fixture.http.requests(forPath: "/v1/session/login/finalize").first)
+        XCTAssertNotNil(finalizeReq.value(forHTTPHeaderField: HTTPHeader.dpop))
+        let finalizeBody = try Self.json(finalizeReq.httpBody)
+        XCTAssertEqual(finalizeBody["challenge_token"] as? String, loginToken)
+    }
+
+    func test_oauthEmailChallenge_redactsVerificationToken() {
+        let challenge = OAuthEmailChallenge(verificationToken: "verify.SECRET.tok")
+
+        let printed = "\(challenge)"
+        let dbg = String(reflecting: challenge)
+        var dumped = ""
+        dump(challenge, to: &dumped)
+
+        for surface in [printed, dbg, dumped] {
+            XCTAssertFalse(surface.contains("verify.SECRET.tok"), "leaked verification token: \(surface)")
+            XCTAssertTrue(surface.contains("redacted"))
+        }
     }
 }

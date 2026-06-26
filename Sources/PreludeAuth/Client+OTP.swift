@@ -49,8 +49,11 @@ extension PreludeAuthClient.Impl {
 
     /// Trigger OTP delivery for an in-flight challenge (`POST /otp`).
     /// Unauthenticated: the challenge token in the body identifies the
-    /// caller and already carries its PKCE binding, so no DPoP.
-    func sendOTP(challengeToken: String) async throws {
+    /// caller, so no DPoP. Returns the issued verification token (the
+    /// `X-Verification-Token` response header) so a session-less flow
+    /// can replay it on `/otp/check` rather than rely on cookies.
+    @discardableResult
+    func sendOTP(challengeToken: String) async throws -> String? {
         let dispatchID = try await dispatchSignalsIfConfigured()
 
         var request = buildRequest(path: "otp")
@@ -61,11 +64,26 @@ extension PreludeAuthClient.Impl {
             )
         )
 
-        try await httpClient.sendExpectingNoBody(request)
+        let response = try await httpClient.perform(request)
+        try HTTPClient.throwIfNonSuccess(response)
+        return response.response.value(forHTTPHeaderField: HTTPHeader.verificationToken)
     }
 
     func checkOTP(_ code: String) async throws -> PreludeUser {
+        // Plain login carries the verification token in a cookie.
+        try await finalizeOTPCheck(code: code, verificationToken: nil)
+    }
+
+    /// Submit an OTP code to `/otp/check` and exchange the returned
+    /// challenge token for a session. `verificationToken`, when set, is
+    /// sent as the `X-Verification-Token` header to carry a session-less
+    /// flow's state; the plain login leaves it nil and relies on the
+    /// cookie.
+    func finalizeOTPCheck(code: String, verificationToken: String?) async throws -> PreludeUser {
         var request = buildRequest(path: "otp/check")
+        if let verificationToken {
+            request.setValue(verificationToken, forHTTPHeaderField: HTTPHeader.verificationToken)
+        }
         request.httpBody = try JSONEncoder().encode(CheckOTPRequestBody(code: code))
 
         // Unauthenticated: the OTP code in the body is the entire
