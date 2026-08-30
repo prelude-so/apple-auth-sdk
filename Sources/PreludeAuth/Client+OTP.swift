@@ -114,16 +114,18 @@ extension PreludeAuthClient.Impl {
     /// `code_challenge` sent earlier (e.g. by ``migrate(_:)``);
     /// omit when the originating exchange didn't bind a verifier.
     ///
+    /// Multi-hop flows (``migrate(_:)``) pass `startEpoch` from
+    /// before their first hop so a mid-flow ``logout()`` is caught.
+    ///
     /// Only ``finalizeLogin`` and ``refresh()`` write to the
     /// refresh-token store.
     func finalizeLogin(
         challengeToken: String,
-        codeVerifier: String? = nil
+        codeVerifier: String? = nil,
+        startEpoch: Int? = nil
     ) async throws -> PreludeUser {
-        // Capture the session epoch. A ``logout()`` that bumps it
-        // while we're in flight invalidates whatever we'd persist;
-        // bail before writing.
-        let startEpoch = sessionEpoch
+        // Bail before writing if a ``logout()`` bumps the epoch mid-flight.
+        let startEpoch = startEpoch ?? sessionEpoch
 
         // Carry over a refresh token from a previous session, if any, so the
         // server can revoke that session once the new one is established and
@@ -172,12 +174,24 @@ extension PreludeAuthClient.Impl {
             )
         }
 
+        // Validate before persisting so a malformed token never
+        // lands in the cache. Re-map — the challenge token was fine.
+        let user: PreludeUser
+        do {
+            user = try PreludeAuthClient.makeUser(accessToken: body.accessToken)
+        } catch PreludeAuthError.invalidChallengeToken(_) {
+            throw PreludeAuthError.generic(
+                code: "invalid_access_token",
+                message: "login/finalize returned a malformed access token"
+            )
+        }
+
         try await storeAccessToken(
             body.accessToken,
             serverExpiresAt: body.expiresAt,
             timeDiffSec: http.timeDiffSec
         )
 
-        return try PreludeAuthClient.makeUser(accessToken: body.accessToken)
+        return user
     }
 }

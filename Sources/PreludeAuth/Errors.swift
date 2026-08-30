@@ -34,9 +34,17 @@ public enum PreludeAuthError: Error, Sendable {
     /// The person dismissed the login UI before completing it.
     case cancelled
     case invalidConfiguration(String)
+    /// The app has no login configuration accepting this identifier's
+    /// channel. Create one via the Auth Management API.
+    case noLoginConfig(String)
     /// Password rejected by the server's policy. Distinct from
     /// ``unauthorized(_:)`` ("wrong password").
     case invalidPassword(String)
+    /// Returned by `/login/email/password` when the user exists but has
+    /// no password credential stored. Distinct from ``unauthorized(_:)``
+    /// ("wrong password"); recover via a password reset/set flow
+    /// instead of retrying the password.
+    case passwordNotSet(String)
     /// Caller is authenticated but policy denies this action.
     case forbidden(String)
     /// Access token lacks a scope the endpoint requires. Recover via
@@ -61,6 +69,9 @@ public enum PreludeAuthError: Error, Sendable {
     /// assertion failed, or no PasskeyConfig). Fall back to a
     /// different step (e.g. SMS OTP).
     case passkeyStepUnavailable(String)
+    /// Passkeys are unavailable on this platform version
+    /// (requires iOS 16 or later).
+    case passkeyNotSupported(String)
     case network(underlying: Error)
     /// Error code not recognised by the SDK.
     case generic(code: String, message: String)
@@ -108,6 +119,10 @@ extension PreludeAuthError {
             return .tokenReused(message)
         case "invalid_password":
             return .invalidPassword(message)
+        case "password_not_set":
+            return .passwordNotSet(message)
+        case "no_login_config":
+            return .noLoginConfig(message)
         case "forbidden",
              "auth_blocked",
              "scope_not_allowed",
@@ -127,7 +142,7 @@ extension PreludeAuthError {
             return .passkeyNotConfigured(message)
         case "passkey_registration_failed":
             return .passkeyRegistrationFailed(message)
-        case "passkey_step_unavailable":
+        case "passkey_step_unavailable", "passkey_authenticator_blocked":
             return .passkeyStepUnavailable(message)
         case "not_found",
              "saml_connection_not_configured",
@@ -170,8 +185,12 @@ extension PreludeAuthError: LocalizedError {
             return "Cancelled"
         case let .invalidConfiguration(message):
             return "InvalidConfiguration: \(message)"
+        case let .noLoginConfig(message):
+            return "NoLoginConfig: \(message)"
         case let .invalidPassword(message):
             return "InvalidPassword: \(message)"
+        case let .passwordNotSet(message):
+            return "PasswordNotSet: \(message)"
         case let .forbidden(message):
             return "Forbidden: \(message)"
         case let .insufficientScope(message):
@@ -188,6 +207,8 @@ extension PreludeAuthError: LocalizedError {
             return "PasskeyRegistrationFailed: \(message)"
         case let .passkeyStepUnavailable(message):
             return "PasskeyStepUnavailable: \(message)"
+        case let .passkeyNotSupported(message):
+            return "PasskeyNotSupported: \(message)"
         case let .network(underlying):
             return "Network: \(underlying.localizedDescription)"
         case let .generic(code, message):

@@ -71,7 +71,9 @@ extension PreludeAuthClient.Impl {
 
         // No credentials on file — nothing to revoke.
         guard let dpopHandle, let refreshToken, !refreshToken.isEmpty else {
-            if let wipeError { throw wipeError }
+            if let wipeError {
+                throw wipeError
+            }
             return
         }
 
@@ -108,7 +110,9 @@ extension PreludeAuthClient.Impl {
                 clockSkewSec: dpopSkewSec
             )
         } catch {
-            if let wipeError { throw wipeError }
+            if let wipeError {
+                throw wipeError
+            }
             return
         }
         request.setValue(proof, forHTTPHeaderField: HTTPHeader.dpop)
@@ -120,11 +124,15 @@ extension PreludeAuthClient.Impl {
         do {
             try await httpClient.sendExpectingNoBody(request)
         } catch {
-            if let wipeError { throw wipeError }
+            if let wipeError {
+                throw wipeError
+            }
             throw error
         }
 
-        if let wipeError { throw wipeError }
+        if let wipeError {
+            throw wipeError
+        }
     }
 
     /// Delete every domain-scoped credential. Best-effort — every
@@ -135,7 +143,9 @@ extension PreludeAuthClient.Impl {
 
         func attempt(_ body: () throws -> Void) {
             do { try body() } catch {
-                if firstError == nil { firstError = error }
+                if firstError == nil {
+                    firstError = error
+                }
             }
         }
 
@@ -159,13 +169,17 @@ extension PreludeAuthClient.Impl {
         do {
             try await accessTokenCache.clear(domain: domain)
         } catch {
-            if firstError == nil { firstError = error }
+            if firstError == nil {
+                firstError = error
+            }
         }
         // In-memory step-up handle. Logically part of the wipe — a
         // stale challenge that survives logout would let an
         // observer believe a flow is still in progress.
         activeStepUp = nil
 
-        if let firstError { throw firstError }
+        if let firstError {
+            throw firstError
+        }
     }
 }

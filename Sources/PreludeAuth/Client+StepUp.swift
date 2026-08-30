@@ -108,7 +108,8 @@ extension PreludeAuthClient.Impl {
             from: challengeToken,
             status: body.status,
             scope: scope,
-            timeDiffSec: http.timeDiffSec
+            timeDiffSec: http.timeDiffSec,
+            passkeyAssertionOptions: body.passkeyAssertionOptions
         )
 
         // Defensive: `/stepup/request` is contracted to emit
@@ -145,48 +146,69 @@ extension PreludeAuthClient.Impl {
         _ challenge: StepUpChallenge,
         code: String
     ) async throws -> StepUpChallenge? {
+        try await advanceStepUp(challenge, path: "otp/check") {
+            StepUpOTPCheckRequestBody(
+                code: code,
+                challengeToken: challenge.token
+            )
+        }
+    }
+
+    /// Shared advance path for step-up verification endpoints:
+    /// validates the challenge, produces the step body, posts it
+    /// with challenge-scoped DPoP, and rolls local state to the
+    /// advanced challenge — refreshing the session on completion.
+    @discardableResult
+    func advanceStepUp(
+        _ challenge: StepUpChallenge,
+        path: String,
+        bearerAuthenticated: Bool = false,
+        makeBody: () async throws -> some Encodable
+    ) async throws -> StepUpChallenge? {
         guard !challenge.token.isEmpty else {
             throw PreludeAuthError.invalidChallengeToken(
                 "Cannot submit a blocked step-up challenge"
             )
         }
 
-        // Local expiry guard. The server would reject an expired
-        // challenge as `bad_check_code` — indistinguishable from
-        // a wrong code — so catching it here lets the UI surface
-        // "expired, request a fresh one" cleanly, matching the
-        // variant the server emits for `expired_challenge_token`.
+        // Local expiry guard. The server rejects an expired
+        // challenge with an error indistinguishable from a failed
+        // verification, so catching it here lets the UI surface
+        // "expired, request a fresh one" cleanly.
         if challenge.expiresAt < Int(clock().timeIntervalSince1970) {
             throw PreludeAuthError.expiredChallengeToken(
                 "Step-up challenge expired; call requestStepUp(scope:) again"
             )
         }
 
-        var request = buildRequest(path: "otp/check")
-        request.httpBody = try JSONEncoder().encode(
-            StepUpOTPCheckRequestBody(
-                code: code,
-                challengeToken: challenge.token
-            )
-        )
+        let stepBody = try await makeBody()
 
-        // /otp/check authenticates via the challenge token in the
-        // body; challenge-scoped DPoP, no auto-refresh.
+        var request = buildRequest(path: path)
+        request.httpBody = try JSONEncoder().encode(stepBody)
+
+        // Challenge-scoped DPoP proves possession of the challenge.
+        // `/stepup/continue` additionally sits behind the access-token
+        // guard, so it needs the bearer header; `/otp/check` does not.
+        // Its 401 is raised before the step is consumed, so the
+        // refresh-and-retry cannot replay a spent proof.
+        let challengeDPoP = ChallengeDPoPInterceptor(
+            domain: domain,
+            keyStore: keyStore,
+            challengeToken: challenge.token
+        )
+        let interceptors: [Interceptor] = bearerAuthenticated
+            ? [autoRefreshInterceptor, challengeDPoP]
+            : [challengeDPoP]
+
         let (body, http) = try await httpClient.sendJSON(
             request,
-            interceptors: [
-                ChallengeDPoPInterceptor(
-                    domain: domain,
-                    keyStore: keyStore,
-                    challengeToken: challenge.token
-                ),
-            ],
+            interceptors: interceptors,
             as: ChallengeTokenResponse.self
         )
 
         guard let advanced = body.challengeToken, !advanced.isEmpty else {
             throw PreludeAuthError.missingChallengeToken(
-                "Missing challenge token from otp/check response"
+                "Missing challenge token from \(path) response"
             )
         }
 
@@ -194,7 +216,8 @@ extension PreludeAuthClient.Impl {
             from: advanced,
             status: challenge.status,
             scope: challenge.requestedScope,
-            timeDiffSec: http.timeDiffSec
+            timeDiffSec: http.timeDiffSec,
+            passkeyAssertionOptions: body.passkeyAssertionOptions
         )
 
         if next.currentStep == PreludeAuthClient.completedStepName {
@@ -236,7 +259,8 @@ extension PreludeAuthClient {
         from token: String,
         status: StepUpStatus,
         scope: String,
-        timeDiffSec: TimeInterval
+        timeDiffSec: TimeInterval,
+        passkeyAssertionOptions: RequestOptionsJSON? = nil
     ) throws -> StepUpChallenge {
         let (challengeID, currentStep) = try decodeChallengeMeta(from: token)
         let expiresAt = decodeChallengeExpiry(from: token, timeDiffSec: timeDiffSec)
@@ -246,7 +270,8 @@ extension PreludeAuthClient {
             currentStep: currentStep,
             requestedScope: scope,
             token: token,
-            expiresAt: expiresAt
+            expiresAt: expiresAt,
+            passkeyAssertionOptions: passkeyAssertionOptions
         )
     }
 
