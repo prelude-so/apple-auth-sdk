@@ -1,9 +1,14 @@
 # Readme
 ### Usage
 
-The Apple Auth SDK lets you sign users into your iOS app and manages the resulting session — tokens, refresh, logout — against the Prelude Auth API.
+The Apple Auth SDK lets you sign users into your iOS app and manages the resulting session (tokens, refresh, logout) against the Prelude Auth API.
 
 It is provided as a regular Swift package that you can [import as a dependency directly into your iOS application](https://developer.apple.com/documentation/xcode/adding-package-dependencies-to-your-app).
+
+### Requirements
+
+- iOS deployment target **15.0+**
+- Swift tools **5.7+** (Xcode 14 or later)
 
 #### Email OTP login
 
@@ -47,7 +52,7 @@ if result.valid {
 }
 ```
 
-Or fetch the policy once and classify locally — useful for live-as-you-type validation:
+Or fetch the policy once and classify locally, useful for live-as-you-type validation:
 
 ```
 let policy = try await client.passwordCompliancy()
@@ -81,7 +86,47 @@ let next = try await client.submitStepUpOTP(challenge, code: "123456")
 // to deliver the next code.
 ```
 
+When `challenge.currentStep` is `verify_passkey`, advance the step by asserting a passkey instead of submitting a code:
+
+```
+let next = try await client.continueStepUpWithPasskey(challenge)
+```
+
 `client.activeStepUp` exposes the most recent in-flight challenge so a UI can resume from a cold start.
+
+#### Passkeys
+
+Register a passkey, sign in with one, and manage them. Registration requires the session to hold `prld:passkey:write`, which is granted by a step-up — elevate first, then register:
+
+```
+let challenge = try await client.requestStepUp(scope: "prld:passkey:write")
+try await client.sendStepUpOTP(challenge)
+try await client.submitStepUpOTP(challenge, code: "123456")
+
+let result = try await client.registerPasskey(
+    RegisterPasskeyOptions(username: "you@example.com")
+)
+```
+
+Passwordless sign-in — no OTP or password. Pass `.init(autofill: true)` to surface passkeys inline on a username field instead of a modal sheet:
+
+```
+let user = try await client.loginWithPasskey()
+```
+
+List, rename, and remove credentials. An empty `nickname` clears the label:
+
+```
+let passkeys = try await client.listPasskeys()
+try await client.renamePasskey(passkeys[0].credentialID, nickname: "My iPhone")
+try await client.deletePasskey(passkeys[0].credentialID)
+```
+
+**Prerequisite — Associated Domains.** Add the `webcredentials:<rp-id>` entitlement to your app, where `<rp-id>` is the relying-party id from your app's passkey configuration — the host that serves `/.well-known/apple-app-site-association`. The system verifies this association before any passkey ceremony; without it registration and login fail. Requires iOS 16 or later.
+
+Operators enable passkeys by setting the passkey configuration on the app (relying-party id, allowed origins, `login_enabled`, and the authorised `ios_app_ids`). The relying-party host then serves the association document automatically.
+
+The step-up that grants `prld:passkey:write` must use grant mode `session-bound` or `profile-bound`, not `single-use` — registration verifies the scope against the session, so a single-use grant (which lives only on the token) is not honoured.
 
 #### Change password
 

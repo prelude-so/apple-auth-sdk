@@ -4,6 +4,43 @@ Notable changes to `PreludeAuth` (the Prelude Apple Auth SDK).
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-08-28
+
+### Added
+- Passkeys. `registerPasskey(_:)` creates a credential for the
+  signed-in user (requires a session holding `prld:passkey:write`,
+  granted via step-up), `loginWithPasskey(_:)` signs in without a
+  password or OTP (with optional autofill presentation), and
+  `listPasskeys()` / `renamePasskey(_:nickname:)` /
+  `deletePasskey(_:)` manage credentials.
+  `continueStepUpWithPasskey(_:)` advances a `verify_passkey`
+  step-up by asserting a passkey. Requires iOS 16 and the
+  `webcredentials` associated-domains entitlement for the app's
+  relying-party domain.
+- `passkeyRegistrationFailed`, `passkeyStepUnavailable`,
+  `passkeyNotConfigured`, and `passkeyNotSupported` errors covering
+  the new ceremonies. `passkeyNotSupported` is thrown on iOS 15.
+- `PreludeAuthError.noLoginConfig` (`no_login_config`), returned when starting an OTP login
+  while the app has no login configuration accepting the
+  identifier's channel. Create one via the Auth Management API.
+- `PreludeAuthError.passwordNotSet` (`password_not_set`), returned
+  when the user exists but has no password credential. Recover via a
+  password reset rather than retrying the password.
+
+### Changed
+- **Breaking:** `MigrateOptions.token` is now a `RedactedString`, so
+  the options struct is safe to log. `MigrateOptions(token:)` still
+  takes a `String`; read the value back through `token.value`.
+- A malformed cached access token now surfaces as
+  `generic(code: "invalid_access_token")` from `checkOTP`,
+  `loginWithPassword`, and `migrate(_:)`, rather than the misleading
+  `invalidChallengeToken`. Login validates the token before
+  persisting it, so a bad one is never cached.
+
+### Fixed
+- `migrate(_:)` captures the session epoch before its first hop, so a
+  `logout()` racing the exchange wins and nothing is persisted.
+
 ## [0.6.0] - 2026-06-26
 
 ### Added

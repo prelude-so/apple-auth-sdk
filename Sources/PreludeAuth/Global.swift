@@ -96,14 +96,20 @@ public struct PreludeUser: Sendable, Equatable {
     }
 }
 
-/// Options for ``PreludeAuthClient/migrate(_:)``: a single
-/// legacy bearer token to exchange for a Prelude session.
+/// Options for ``PreludeAuthClient/migrate(_:)``. The token is
+/// wrapped in ``RedactedString`` so the struct is safe to log.
 public struct MigrateOptions: Sendable {
-    /// Bearer token issued by the legacy authentication system.
-    public var token: String
+    /// Bearer token from the legacy system; never persisted.
+    public var token: RedactedString
 
     public init(token: String) {
-        self.token = token
+        self.token = RedactedString(token)
+    }
+}
+
+extension MigrateOptions: CustomStringConvertible {
+    public var description: String {
+        "MigrateOptions(token: \(token))"
     }
 }
 
@@ -150,9 +156,11 @@ struct CheckOTPRequestBody: Encodable {
 /// rather than a generic decode error.
 struct ChallengeTokenResponse: Decodable {
     var challengeToken: String?
+    var passkeyAssertionOptions: RequestOptionsJSON?
 
     enum CodingKeys: String, CodingKey {
         case challengeToken = "challenge_token"
+        case passkeyAssertionOptions = "public_key_credential_request_options"
     }
 }
 
@@ -394,6 +402,10 @@ public struct StepUpChallenge: Sendable, Equatable {
     /// for blocked challenges.
     let expiresAt: Int
 
+    /// Assertion options when ``currentStep`` is `verify_passkey`;
+    /// `nil` otherwise. Drives ``PreludeAuthClient/continueStepUpWithPasskey(_:)``.
+    let passkeyAssertionOptions: RequestOptionsJSON?
+
     /// Blocked-response factory. Carries no token and is not
     /// submittable.
     static func blocked(requestedScope: String) -> Self {
@@ -403,7 +415,8 @@ public struct StepUpChallenge: Sendable, Equatable {
             currentStep: nil,
             requestedScope: requestedScope,
             token: "",
-            expiresAt: 0
+            expiresAt: 0,
+            passkeyAssertionOptions: nil
         )
     }
 }
@@ -430,10 +443,12 @@ struct StepUpRequestBody: Encodable {
 struct StepUpRequestResponse: Decodable {
     var status: StepUpStatus
     var challengeToken: String?
+    var passkeyAssertionOptions: RequestOptionsJSON?
 
     enum CodingKeys: String, CodingKey {
         case status
         case challengeToken = "challenge_token"
+        case passkeyAssertionOptions = "public_key_credential_request_options"
     }
 }
 

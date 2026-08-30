@@ -7,7 +7,7 @@ private let clockSkewRetryThresholdSec: TimeInterval = 1.0
 
 /// Upper bound on the body size we attempt to decode as an API
 /// error. Caps the cost of a misbehaving server returning a giant
-/// non-JSON 4xx page. Mirrors the Android `MAX_PEEK_BYTES`.
+/// non-JSON 4xx page.
 private let maxErrorBodyBytes = 4 * 1024
 
 /// Signs outgoing requests with a DPoP proof and retries once on

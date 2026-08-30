@@ -5,14 +5,14 @@ import Foundation
 extension PreludeAuthClient {
     /// Exchange a legacy bearer token for a Prelude session.
     ///
-    /// `POST /migration` accepts the legacy `token` plus a PKCE
-    /// `code_challenge`; the server returns a single-use
-    /// `challenge_token` which the SDK redeems on `/login/finalize`
-    /// alongside the matching verifier.
+    /// Two hops: `POST /migration` trades the legacy token for a
+    /// single-use `challenge_token`, redeemed on `/login/finalize`
+    /// with the PKCE verifier.
     ///
-    /// Idempotent: a valid cached session short-circuits the
-    /// network call so re-running `migrate` after launch is safe.
-    /// Concurrent callers share a single in-flight migration.
+    /// Safe on every launch: a cached session short-circuits without
+    /// spending the token, concurrent callers share one in-flight
+    /// exchange, and a racing ``logout()`` wins — nothing is
+    /// persisted and the call throws ``PreludeAuthError/unauthorized(_:)``.
     @discardableResult
     public func migrate(_ options: MigrateOptions) async throws -> PreludeUser {
         try await impl.migrate(options)
@@ -26,7 +26,7 @@ extension PreludeAuthClient.Impl {
     func migrate(_ options: MigrateOptions) async throws -> PreludeUser {
         // Fast path: already migrated by an earlier launch / call.
         if let entry = await accessTokenCache.get(domain: domain) {
-            return try PreludeAuthClient.makeUser(accessToken: entry.accessToken)
+            return try makeUserForMigrate(accessToken: entry.accessToken)
         }
 
         if let existing = inflightMigration {
@@ -38,7 +38,7 @@ extension PreludeAuthClient.Impl {
         // abandon the legacy token mid-exchange.
         let task = Task<PreludeUser, Error> {
             defer { self.inflightMigration = nil }
-            return try await self.doMigrate(token: options.token)
+            return try await self.doMigrate(token: options.token.value)
         }
         inflightMigration = task
         return try await task.value
@@ -48,8 +48,12 @@ extension PreludeAuthClient.Impl {
         // Re-check after taking the inflight slot — a sibling may
         // have populated the cache before we got here.
         if let entry = await accessTokenCache.get(domain: domain) {
-            return try PreludeAuthClient.makeUser(accessToken: entry.accessToken)
+            return try makeUserForMigrate(accessToken: entry.accessToken)
         }
+
+        // Captured before the first hop so a `logout()` between the
+        // hops still fails `finalizeLogin`'s pre-persist guard.
+        let startEpoch = sessionEpoch
 
         let codeVerifier = try PKCE.generateCodeVerifier()
         let codeChallenge = PKCE.codeChallenge(for: codeVerifier)
@@ -81,7 +85,21 @@ extension PreludeAuthClient.Impl {
 
         return try await finalizeLogin(
             challengeToken: challengeToken,
-            codeVerifier: codeVerifier
+            codeVerifier: codeVerifier,
+            startEpoch: startEpoch
         )
+    }
+
+    /// The JWT decoder reports any malformed token as
+    /// `invalidChallengeToken`; re-map, since none is involved here.
+    private func makeUserForMigrate(accessToken: String) throws -> PreludeUser {
+        do {
+            return try PreludeAuthClient.makeUser(accessToken: accessToken)
+        } catch PreludeAuthError.invalidChallengeToken(_) {
+            throw PreludeAuthError.generic(
+                code: "invalid_access_token",
+                message: "cached access token is malformed"
+            )
+        }
     }
 }
