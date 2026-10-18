@@ -377,10 +377,8 @@ public enum StepUpStatus: String, Sendable, Decodable {
 /// Handle returned by ``PreludeAuthClient/requestStepUp(scope:)``
 /// and ``PreludeAuthClient/submitStepUpOTP(_:code:)``.
 ///
-/// Value-typed: each caller holds its own challenge, so concurrent
-/// step-up flows on a single client don't share state. The wire
-/// challenge token and its expiry are deliberately internal — the
-/// SDK reads them when you pass the challenge back in.
+/// The wire challenge token and its expiry are deliberately internal:
+/// the SDK reads them when you pass the challenge back in.
 public struct StepUpChallenge: Sendable, Equatable {
     public let status: StepUpStatus
 
@@ -585,10 +583,6 @@ public struct ListSessionsResponse: Sendable, Equatable, Decodable {
 }
 
 /// Which sessions to revoke on `POST /me/revoke`.
-///
-/// Modeled as an enum so `session(id:)` carries its required
-/// identifier in the type rather than relying on a runtime
-/// check.
 public enum RevokeTarget: Sendable, Equatable {
     /// Every session for this user, including the current one.
     case all

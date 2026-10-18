@@ -1,17 +1,10 @@
 import Foundation
 import Security
 
-/// Keychain-backed per-domain DPoP clock-skew storage. Mirrors
-/// ``DPoPNonceStore`` so the persistence story is uniform — both
-/// values are recovered from a single backend on cold start.
+/// Keychain-backed per-domain DPoP clock-skew storage.
 ///
-/// Skew is `serverTime - localTime` in seconds (TimeInterval, to
-/// line up with the rest of the codebase). Sub-second precision is
-/// preserved on the way in and out so the retry threshold stays
-/// honest.
-///
-/// Write atomicity, locking, and the cross-process duplicate-item
-/// fallback follow ``DPoPNonceStore`` exactly.
+/// Skew is `serverTime - localTime` in seconds; sub-second precision
+/// is preserved on the way in and out.
 struct DPoPClockSkewStore {
     private let backend: KeychainBackend
     private let service: String

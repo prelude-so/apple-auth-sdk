@@ -2,15 +2,9 @@ import Foundation
 
 /// Attaches `Authorization: Bearer <access token>` and recovers from
 /// 401 responses by invalidating the cache, refreshing, and retrying
-/// once.
-///
-/// If the refresh itself fails, returns the original 401 (not the
+/// once. If the refresh fails, returns the original 401 (not the
 /// retry response, never a thrown error) so upstream retry loops
 /// treat auth failure as non-transient.
-///
-/// Auth state is routed through ``SessionRefreshing`` rather than a
-/// triple of closures — named members in stack traces, easy fakes
-/// in tests, and a single ``Sendable`` constraint instead of three.
 struct AutoRefreshInterceptor: Interceptor {
     let refresher: any SessionRefreshing
 
@@ -22,7 +16,7 @@ struct AutoRefreshInterceptor: Interceptor {
         // Omit `Authorization` entirely when no token is cached —
         // strict proxies reject `Bearer ` (empty) before the
         // server can return a 401, breaking the refresh path.
-        let sentToken = await refresher.currentAccessToken()
+        let sentToken = try await refresher.currentAccessToken()
         if let sentToken, !sentToken.isEmpty {
             initialRequest.setValue("Bearer \(sentToken)", forHTTPHeaderField: HTTPHeader.authorization)
         }
@@ -33,13 +27,10 @@ struct AutoRefreshInterceptor: Interceptor {
             return (data, response)
         }
 
-        // A sibling caller may have refreshed while our 401 was
-        // in flight. If the cache now holds a different token,
-        // skip invalidate+refresh — `invalidateCurrentToken` only
-        // mutates `expiresAt`, so re-invalidating here would
-        // clobber the fresh entry back to expired and force a
-        // redundant /refresh round-trip.
-        if let fresh = await refresher.currentAccessToken(),
+        // A sibling caller may have refreshed while our 401 was in flight.
+        // `invalidateCurrentToken` only mutates `expiresAt`, so invalidating
+        // an already-refreshed token would clobber it back to expired.
+        if let fresh = try await refresher.currentAccessToken(),
            !fresh.isEmpty, fresh != sentToken {
             var retryRequest = request
             retryRequest.setValue("Bearer \(fresh)", forHTTPHeaderField: HTTPHeader.authorization)

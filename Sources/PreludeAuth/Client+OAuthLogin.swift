@@ -42,11 +42,6 @@ public enum FinalizeOAuthLoginResult: Sendable {
 /// An OAuth-email-link verification awaiting its one-time code.
 /// Returned in ``FinalizeOAuthLoginResult/otpRequired(_:email:)`` and
 /// redeemed by ``PreludeAuthClient/checkOAuthEmailOTP(_:resuming:)``.
-///
-/// Value-typed so it carries its own verification token: concurrent
-/// logins never clash, and completion doesn't depend on shared
-/// cookies. Safe to log — the token is redacted from every textual
-/// surface.
 public struct OAuthEmailChallenge: Sendable {
     /// Verification token issued when the code was sent, replayed as
     /// the `X-Verification-Token` header on the check.
@@ -69,12 +64,8 @@ public struct OAuthLoginContext: Sendable {
 
 extension PreludeAuthClient {
     /// Begin an OAuth login, returning a context to present in a web
-    /// authentication context.
-    ///
-    /// Generates a PKCE pair bound to the returned
-    /// ``OAuthLoginContext``; pass that same context to
-    /// ``finalizeOAuthLogin(_:challengeToken:)``. Each call is
-    /// self-contained, so concurrent logins never share a verifier.
+    /// authentication context. Pass the returned context to
+    /// ``finalizeOAuthLogin(_:challengeToken:)``.
     public func initiateOAuthLogin(
         _ options: InitiateOAuthLoginOptions
     ) async throws -> OAuthLoginContext {
@@ -161,11 +152,8 @@ extension PreludeAuthClient.Impl {
         let link = try? JSONDecoder().decode(OAuthLinkClaims.self, from: jwt.payloadJSON)
 
         if link?.grantMode == "oauth-email-link" {
-            // Unverified provider email: deliver the verification code
-            // and hand back a resumable challenge so the caller can
-            // drive its OTP screen. The verification token — not the
-            // challenge token — carries the flow's state through to the
-            // check; the PKCE verifier isn't used on this path.
+            // On this path the verification token, not the challenge
+            // token, carries the flow's state; the PKCE verifier is unused.
             guard let verificationToken = try await sendOTP(challengeToken: challengeToken),
                   !verificationToken.isEmpty
             else {

@@ -8,18 +8,11 @@ extension PreludeAuthClient {
     /// Posts to `/stepup/request`. Returns a ``StepUpChallenge``
     /// handle — pass it to ``sendStepUpOTP(_:)`` to trigger code
     /// delivery, then to ``submitStepUpOTP(_:code:)`` to verify.
+    /// Delivery is a separate call on purpose: a `review` flow
+    /// must not send an unsolicited code.
     ///
-    /// OTP delivery is caller-driven on purpose: it avoids
-    /// unsolicited deliveries on `review` flows and lets UIs
-    /// defer firing `/otp` until the user lands on the
-    /// code-entry screen (or taps "resend code").
-    ///
-    /// Multiple in-flight step-ups on one client are supported;
-    /// each caller holds its own value.
-    ///
-    /// `metadata` is forwarded verbatim to the server's step-up
-    /// audit hook. Server-side caps apply (max 5 keys, 12-char
-    /// keys, 32-char values); a violation surfaces as
+    /// `metadata` is forwarded verbatim; server-side caps (max 5
+    /// keys, 12-char keys, 32-char values) surface as
     /// ``PreludeAuthError/badRequest(_:)``.
     @discardableResult
     public func requestStepUp(
@@ -30,33 +23,24 @@ extension PreludeAuthClient {
         try await impl.requestStepUp(scope: scope, metadata: metadata)
     }
 
-    /// Trigger OTP delivery (`POST /otp`) for an in-flight
-    /// step-up `challenge`.
-    ///
-    /// Call this when `challenge.currentStep` is an OTP-delivery
-    /// step (`verify_email` / `verify_sms`) so the user receives
-    /// the code. Caller-driven so the UI decides when delivery
-    /// fires.
-    ///
-    /// Throws ``PreludeAuthError/invalidChallengeToken(_:)``
-    /// if `challenge` is blocked (carries no token).
+    /// Trigger OTP delivery (`POST /otp`) for an in-flight step-up
+    /// `challenge`. Call it when `challenge.currentStep` is an
+    /// OTP-delivery step (`verify_email` / `verify_sms`). Throws
+    /// ``PreludeAuthError/invalidChallengeToken(_:)`` if `challenge`
+    /// is blocked (carries no token).
     public func sendStepUpOTP(_ challenge: StepUpChallenge) async throws {
         try await impl.sendStepUpOTP(challenge)
     }
 
     /// Submit an OTP code for `challenge`.
     ///
-    /// Returns the next ``StepUpChallenge`` for multi-step flows,
-    /// or `nil` when the flow has completed and the session has
-    /// been refreshed with the granted scope. For a multi-step
-    /// flow whose next step is also OTP delivery, the caller must
-    /// invoke ``sendStepUpOTP(_:)`` on the returned handle to
-    /// trigger the next code.
+    /// Returns the next ``StepUpChallenge`` for multi-step flows, or
+    /// `nil` once the flow completed and the session was refreshed
+    /// with the granted scope. A next step that is itself an OTP
+    /// delivery needs its own ``sendStepUpOTP(_:)`` call.
     ///
-    /// On a `bad_check_code` rejection the original `challenge`
-    /// stays usable up to the server's bucket limit. On any other
-    /// error the challenge is dead — recover via
-    /// ``requestStepUp(scope:)``.
+    /// A `bad_check_code` rejection leaves `challenge` submittable
+    /// up to the server's bucket limit; any other error kills it.
     @discardableResult
     public func submitStepUpOTP(
         _ challenge: StepUpChallenge,
@@ -112,12 +96,9 @@ extension PreludeAuthClient.Impl {
             passkeyAssertionOptions: body.passkeyAssertionOptions
         )
 
-        // Defensive: `/stepup/request` is contracted to emit
-        // flows that need at least one verification step. A
-        // response that arrives already at `completed` is a
-        // server contract violation; throw before any
-        // post-completion refresh could fire and consume the
-        // refresh-token rotation.
+        // `/stepup/request` is contracted to emit flows with at
+        // least one verification step, so an already-completed
+        // response is a server contract violation.
         if challenge.currentStep == PreludeAuthClient.completedStepName {
             throw PreludeAuthError.invalidChallengeToken(
                 "stepup/request returned an already-completed challenge"

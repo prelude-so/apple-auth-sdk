@@ -2,19 +2,13 @@ import Foundation
 
 /// SDK version + transport-layer identification.
 ///
-/// Format: `Prelude/<sdk-version> (<platform>; <os name> <os version>)`
-///
-/// Platform and OS version are included so server-side telemetry
-/// can distinguish iOS / macOS / tvOS deployments without forcing
-/// the host app to surrender its own `User-Agent`.
-///
-/// ``version`` is the source of truth; release tooling rewrites
-/// this constant alongside the package tag.
+/// ``version`` is the source of truth for releases: the publish scripts
+/// read it and validate the tag against it.
 enum PreludeAuthSDK {
     /// Semantic version of the PreludeAuth package. Bumped at
     /// release time and included in the `User-Agent` of every
     /// outgoing request.
-    static let version = "0.7.0"
+    static let version = "0.8.0"
 
     /// `User-Agent` value attached to every outgoing request.
     static let userAgent: String = {

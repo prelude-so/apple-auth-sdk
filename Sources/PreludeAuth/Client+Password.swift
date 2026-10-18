@@ -6,9 +6,7 @@ extension PreludeAuthClient {
     /// Log in with an email identifier and a password.
     ///
     /// `POST /login/email/password` returns a short-lived
-    /// `challenge_token`; the SDK exchanges it on
-    /// `/login/finalize`. Races with ``logout()`` are closed by
-    /// the session-epoch guard.
+    /// `challenge_token`; the SDK exchanges it on `/login/finalize`.
     @discardableResult
     public func loginWithPassword(
         _ options: LoginWithPasswordOptions
@@ -22,14 +20,10 @@ extension PreludeAuthClient {
         try await impl.passwordCompliancy()
     }
 
-    /// Validate a candidate password against the server's
-    /// configured compliancy rules. One network call, then pure
-    /// local classification.
-    ///
-    /// Character classification uses Unicode `generalCategory`
-    /// (`Lu`/`Ll`/`Nd`) and counts code points — important when
-    /// passwords contain emoji or combining sequences where
-    /// grapheme-cluster counts would disagree.
+    /// Validate a candidate password against the server's configured
+    /// compliancy rules. One network call, then pure local
+    /// classification that counts Unicode code points, not grapheme
+    /// clusters.
     public func validatePassword(
         _ password: String
     ) async throws -> PreludePasswordCompliancyResults {

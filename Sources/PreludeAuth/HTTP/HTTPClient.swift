@@ -64,14 +64,9 @@ struct HTTPClient {
             let decoded = try decoder.decode(Response.self, from: response.data)
             return (decoded, response)
         } catch {
-            // Do NOT include the response body. Successful
-            // credential-issuing endpoints (`/refresh`,
-            // `/login/finalize`, `/otp/check`, …) put access /
-            // challenge tokens in the body; folding that into an
-            // error message would surface secrets through any
-            // host-app log or crash report. The decoder's own
-            // description names the offending field, which is
-            // enough to debug the schema mismatch.
+            // Never fold the response body into the message: credential-issuing
+            // endpoints return access and challenge tokens there, and the error
+            // would leak them into host-app logs and crash reports.
             throw PreludeAuthError.generic(
                 code: "decoding_failed",
                 message: error.localizedDescription

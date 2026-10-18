@@ -2,19 +2,14 @@ import Foundation
 
 /// Attaches a DPoP proof bound to a specific step-up challenge token.
 ///
-/// Differences from ``DPoPInterceptor``:
-/// - The proof's `jti` is the challenge's `jti`, not a fresh UUID,
-///   so the server can pin the proof to the challenge.
-/// - No nonce: challenge-scoped requests are one-shot.
-/// - No retry. The skew correction is *read* from the keystore so
-///   one-shot proofs after the regular interceptor's first retry
-///   are pre-corrected.
+/// The proof reuses the challenge's `jti` so the server can pin it to the
+/// challenge, and carries no nonce. These requests are one-shot and never
+/// retry, so the skew is *read* from the keystore, pre-corrected by the
+/// regular ``DPoPInterceptor``'s own retry.
 ///
-/// Uses ``DPoPKeyStore/get(domain:)`` (not ``getOrCreate``) — the
-/// challenge-issuing session has already provisioned the keypair, so
-/// minting a fresh one here would mismatch the fingerprint pinned
-/// server-side. An empty keystore passes through unsigned and lets
-/// the server's own error surface.
+/// Uses ``DPoPKeyStore/get(domain:)`` rather than ``getOrCreate``: minting a
+/// fresh keypair here would mismatch the fingerprint the challenge-issuing
+/// session pinned server-side.
 struct ChallengeDPoPInterceptor: Interceptor {
     let domain: String
     let keyStore: DPoPKeyStore

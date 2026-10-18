@@ -5,10 +5,6 @@ import Foundation
 extension PreludeAuthClient {
     /// Exchange a legacy bearer token for a Prelude session.
     ///
-    /// Two hops: `POST /migration` trades the legacy token for a
-    /// single-use `challenge_token`, redeemed on `/login/finalize`
-    /// with the PKCE verifier.
-    ///
     /// Safe on every launch: a cached session short-circuits without
     /// spending the token, concurrent callers share one in-flight
     /// exchange, and a racing ``logout()`` wins — nothing is

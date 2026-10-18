@@ -4,6 +4,34 @@ Notable changes to `PreludeAuth` (the Prelude Apple Auth SDK).
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-10-16
+
+### Added
+- Idle lock. `PreludeIdleLock` locks the app after `threshold`
+  seconds in the background, and the user unlocks it offline with an
+  app passcode or, optionally, Face ID / Touch ID. Locking seals the
+  client, so the session stays unusable until unlock. `isLocked`
+  drives the lock screen; `setPasscode(_:)`, `enableBiometrics()` /
+  `disableBiometrics()`, `unlock(passcode:)`,
+  `unlockWithBiometrics()`, `lock()` and `disable()` manage it. Wrong
+  passcodes are capped at `maxAttempts` (default 5). By default the
+  lock also engages on launch, so relaunching does not skip it.
+  Requires UIKit; biometrics needs `NSFaceIDUsageDescription` in the
+  app's Info.plist.
+- `PreludeAuthClient.seal()`, `unseal()` and `isSealed`. A sealed
+  client hides the profile and access token, and every protected call
+  and refresh throws `sessionLocked`. `unseal()` restores the token
+  from the Keychain without a network call. Apps that never call
+  `seal()` see no change.
+- `PreludeAuthClient.domain`, the Keychain partition key of the
+  client.
+- `sessionLocked`, `lockUnavailable`, `invalidPasscode`, and
+  `lockedOut` errors. Sign the user out on `lockedOut`.
+
+### Changed
+- `inactive_user`, returned when a deactivated user logs in, now maps
+  to `PreludeAuthError.forbidden` instead of `generic`.
+
 ## [0.7.0] - 2026-08-28
 
 ### Added
