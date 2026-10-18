@@ -18,6 +18,7 @@ extension PreludeAuthClient {
 extension PreludeAuthClient.Impl {
     @discardableResult
     func refresh() async throws -> PreludeUser {
+        try requireUnsealed()
         if let entry = await accessTokenCache.get(domain: domain) {
             return try PreludeAuthClient.makeUser(accessToken: entry.accessToken)
         }
@@ -39,13 +40,9 @@ extension PreludeAuthClient.Impl {
     }
 
     /// Atomically install a new refresh task in the inflight slot.
-    ///
-    /// Precondition: the slot was just observed empty and no
-    /// `await` has run since. Actor isolation closes the gap.
-    ///
-    /// Unstructured `Task` decouples the refresh from the calling
-    /// task's cancellation: a cancelled awaiter doesn't abandon
-    /// the rotated refresh token mid-flight.
+    /// Precondition: the slot was just observed empty with no `await`
+    /// since. The unstructured `Task` keeps a cancelled awaiter from
+    /// abandoning the rotated refresh token mid-flight.
     @discardableResult
     func startRefresh(stepUpToken: String?) -> Task<PreludeUser, Error> {
         let task = Task<PreludeUser, Error> {
@@ -62,6 +59,7 @@ extension PreludeAuthClient.Impl {
     ///   `step_up_token` so the server mints an access token
     ///   carrying the just-granted scope.
     func doRefresh(stepUpToken: String?) async throws -> PreludeUser {
+        try requireUnsealed()
         let startEpoch = sessionEpoch
 
         // Re-check after taking the inflight slot — a sibling may

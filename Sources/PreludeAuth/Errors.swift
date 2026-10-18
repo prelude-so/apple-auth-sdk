@@ -1,13 +1,8 @@
 import Foundation
 
-/// Errors thrown by ``PreludeAuthClient``.
-///
-/// Wire-protocol errors from the server are mapped to typed
-/// cases (`unauthorized`, `invalidPassword`, `insufficientScope`,
-/// `expiredChallengeToken`, …); the associated `String` carries
-/// the server's display message. Transport failures surface as
-/// ``network(underlying:)`` or ``timeout``. Codes the SDK
-/// doesn't recognise round-trip through ``generic(code:message:)``.
+/// Errors thrown by ``PreludeAuthClient``. Server error codes map to typed
+/// cases whose associated `String` is the server's display message; codes
+/// the SDK doesn't recognize round-trip through ``generic(code:message:)``.
 public enum PreludeAuthError: Error, Sendable {
     case badRequest(String)
     case unauthorized(String)
@@ -30,6 +25,8 @@ public enum PreludeAuthError: Error, Sendable {
     case invalidOTPCode(String)
     /// The current session could not be refreshed.
     case refreshFailed(String)
+    /// The session is sealed by the idle lock.
+    case sessionLocked(String)
     case timeout
     /// The person dismissed the login UI before completing it.
     case cancelled
@@ -72,6 +69,12 @@ public enum PreludeAuthError: Error, Sendable {
     /// Passkeys are unavailable on this platform version
     /// (requires iOS 16 or later).
     case passkeyNotSupported(String)
+    /// The lock could not be armed or the unlock was not confirmed.
+    case lockUnavailable(String)
+    /// Wrong app-lock passcode; the message says how many attempts remain.
+    case invalidPasscode(String)
+    /// App-lock attempts are spent; sign the user out.
+    case lockedOut(String)
     case network(underlying: Error)
     /// Error code not recognised by the SDK.
     case generic(code: String, message: String)
@@ -130,6 +133,7 @@ extension PreludeAuthError {
              "direct_scope_identifier_mismatch",
              "invalid_verify_configuration",
              "suspended_account",
+             "inactive_user",
              "invalid_api_key",
              "email_verification_not_allowed",
              "saml_connection_disabled":
@@ -177,6 +181,8 @@ extension PreludeAuthError: LocalizedError {
             return "TokenReused: \(message)"
         case let .invalidOTPCode(message):
             return "InvalidOTPCode: \(message)"
+        case let .sessionLocked(message):
+            return "SessionLocked: \(message)"
         case let .refreshFailed(message):
             return "RefreshFailed: \(message)"
         case .timeout:
@@ -209,6 +215,12 @@ extension PreludeAuthError: LocalizedError {
             return "PasskeyStepUnavailable: \(message)"
         case let .passkeyNotSupported(message):
             return "PasskeyNotSupported: \(message)"
+        case let .lockUnavailable(message):
+            return "LockUnavailable: \(message)"
+        case let .invalidPasscode(message):
+            return "InvalidPasscode: \(message)"
+        case let .lockedOut(message):
+            return "LockedOut: \(message)"
         case let .network(underlying):
             return "Network: \(underlying.localizedDescription)"
         case let .generic(code, message):

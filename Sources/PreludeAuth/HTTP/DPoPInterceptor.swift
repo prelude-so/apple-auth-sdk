@@ -106,12 +106,9 @@ struct DPoPInterceptor: Interceptor {
         return (retryData, retryResponse)
     }
 
-    /// Returns `nil` when the server didn't supply a parseable
-    /// `Date:` header, or the computed skew is below the retry
-    /// threshold. A sub-threshold result still *clears* any
-    /// persisted skew so a stale correction (e.g. from before a
-    /// device-clock re-sync) can't keep poisoning future
-    /// requests. Caller falls through to the normal error path.
+    /// Returns `nil` when the server sent no parseable `Date:` header, or the
+    /// computed skew is below the retry threshold. The sub-threshold case also
+    /// clears any persisted skew so a stale correction can't poison later requests.
     private func retryWithCorrectedSkew(
         request: URLRequest,
         response: HTTPURLResponse,
@@ -127,11 +124,8 @@ struct DPoPInterceptor: Interceptor {
             try keyStore.deleteClockSkew(domain: domain)
             return nil
         }
-        // Persisted skew is sticky until the next
-        // `invalid_dpop_proof` either resets or clears it. After
-        // a device-clock re-sync the first request burns one
-        // server rejection to self-heal — acceptable in exchange
-        // for not invalidating skew on every refresh.
+        // Persisted skew is sticky until the next `invalid_dpop_proof` resets
+        // or clears it, so a re-synced clock self-heals on the next rejection.
         try keyStore.setClockSkew(domain: domain, skew: newSkew)
         let nonce = try keyStore.getNonce(domain: domain)
         let retryProof = try sign(key: key, method: method, htu: htu, nonce: nonce, skew: newSkew)

@@ -37,14 +37,10 @@ extension PreludeAuthClient.Impl {
     }
 
     private func doLogout() async throws {
-        // Snapshot what /revoke needs before wiping the stores so
-        // the request can still be DPoP-signed afterwards.
-        //
-        // `try?` on the reads is load-bearing: a corrupted Keychain
-        // item can fail `get` but still succeed `delete`, so the
-        // wipe must run regardless. Losing a snapshot just means
-        // we can't sign /revoke; leaving the user stuck logged-in
-        // is worse than an unrevoked server session.
+        // Snapshot what /revoke needs before wiping the stores so the
+        // request can still be DPoP-signed afterwards. `try?` is
+        // load-bearing: a read can fail on a corrupted Keychain item
+        // that `delete` still clears, so the wipe must run regardless.
         let dpopHandle = try? keyStore.get(domain: domain)
         let dpopNonce = try? keyStore.getNonce(domain: domain)
         let dpopSkewSec = (try? keyStore.getClockSkew(domain: domain)) ?? 0
@@ -59,14 +55,10 @@ extension PreludeAuthClient.Impl {
             wipeError = error
         }
 
-        // Order is **snapshot → wipe → bump → /revoke**. Bumping
-        // AFTER the wipe is load-bearing for the resurrection
-        // guard: any refresh whose snapshot read pre-wipe tokens
-        // captured the pre-bump epoch, so its post-network check
-        // sees the mismatch and bails before persisting rotated
-        // tokens back into stores we just emptied. A refresh that
-        // starts after the wipe reads an empty store and is
-        // rejected by the server.
+        // Bump AFTER the wipe: a refresh that snapshotted pre-wipe
+        // tokens holds the pre-bump epoch, so its post-network guard
+        // fails and it won't persist rotated tokens into the stores
+        // we just emptied.
         sessionEpoch += 1
 
         // No credentials on file — nothing to revoke.
@@ -88,16 +80,10 @@ extension PreludeAuthClient.Impl {
             throw PreludeAuthError.invalidConfiguration("URLRequest is missing a URL")
         }
 
-        // Sign /revoke from the snapshot. A signing failure here
-        // (e.g. `errSecAuthFailed` because the Secure Enclave key
-        // was invalidated by a biometric reset) silently degrades:
-        // the local wipe already landed, so the user is logged
-        // out from the device's point of view. Forcing the caller
-        // to handle a thrown signing error in addition to a clean
-        // logout return would be worse than skipping the server-
-        // side revocation, which TTLs out on its own. Network /
-        // HTTP errors during the send below continue to surface
-        // so callers can retry.
+        // A signing failure returns instead of throwing (unless the
+        // wipe itself failed): the wipe already landed, so the user is
+        // logged out locally and the server session TTLs out. Send
+        // errors below still surface so callers can retry.
         let proof: String
         do {
             proof = try DefaultDPoPProofBuilder().create(
@@ -177,6 +163,7 @@ extension PreludeAuthClient.Impl {
         // stale challenge that survives logout would let an
         // observer believe a flow is still in progress.
         activeStepUp = nil
+        sealed = false
 
         if let firstError {
             throw firstError

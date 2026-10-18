@@ -2,21 +2,9 @@ import Foundation
 import Security
 
 /// Keychain-backed DPoP nonce storage, owned per ``DPoPKeyStore``.
-///
-/// ``set`` is a non-atomic upsert (`SecItemUpdate` then
-/// `SecItemAdd`). Two concurrent first-time callers could both see
-/// `errSecItemNotFound` on update and both attempt add; the loser
-/// gets `errSecDuplicateItem`. The fallback path overwrites in that
-/// case.
-///
-/// The lock is per-instance. In production each
-/// ``PreludeAuthClient`` owns one ``DPoPKeyStore`` and therefore
-/// one ``DPoPNonceStore`` per process per backend+service, so
-/// in-process callers contend for this single mutex naturally. The
-/// pathological case of multiple clients targeting the same
-/// service in the same process is still safe: every writer goes
-/// through the duplicate-item fallback that already covers
-/// cross-process races.
+/// ``set`` is a non-atomic upsert (`SecItemUpdate` then `SecItemAdd`) and
+/// the lock is per-instance, so a racing writer can lose the add with
+/// `errSecDuplicateItem`; the fallback path then overwrites.
 struct DPoPNonceStore {
     private let backend: KeychainBackend
     private let service: String

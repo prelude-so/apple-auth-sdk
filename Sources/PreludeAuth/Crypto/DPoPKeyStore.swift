@@ -10,24 +10,9 @@ enum DPoPKeyStoreError: Error {
 // MARK: - Protocol
 
 /// Persistent DPoP keypair + nonce + clock-skew storage, scoped by
-/// Prelude domain. Conformers supply ``backend``, ``nonceStore``,
-/// ``clockSkewStore``, and the `create` / `getOrCreate` pair; the
-/// rest is shared.
-///
-/// `getOrCreate` is a per-conformer requirement (not a default
-/// extension) so each store owns its creation lock as a `private`
-/// stored property. Keeping the lock off the protocol surface keeps
-/// it an implementation detail and forecloses any process-global
-/// lock registry creeping back in.
-///
-/// Multi-instance / multi-process correctness: production wires
-/// one store per ``PreludeAuthClient``, but multiple clients
-/// in the same process — and any second process targeting the
-/// same Keychain partition — share the underlying tag. The shared
-/// ``readOrCreateUnderLock(_:domain:)`` helper handles the
-/// `get → nil → create` race window with a duplicate-item
-/// fallback, so concurrent first-time callers across instances
-/// still converge on a single key.
+/// Prelude domain. `getOrCreate` is a per-conformer requirement rather
+/// than a default extension so that each store can hold its creation
+/// lock as a private stored property.
 protocol DPoPKeyStore: Sendable {
     var backend: KeychainBackend { get }
     var nonceStore: DPoPNonceStore { get }
@@ -55,24 +40,10 @@ extension DPoPKeyStore {
         return DPoPKeyHandle(domain: domain, privateKey: privateKey, publicKey: publicKey)
     }
 
-    /// Shared `getOrCreate` body. Each conformer hands in its own
-    /// ``NSLock`` so the lock stays a private implementation detail
-    /// instead of a protocol requirement.
-    ///
-    /// Sequence:
-    /// 1. Take the per-instance lock — this serialises in-process
-    ///    callers on the same store.
-    /// 2. Read; return immediately on a hit.
-    /// 3. On miss, attempt `create`. If another instance
-    ///    (different store in this process, or another process
-    ///    sharing the Keychain) has already committed a key with
-    ///    the same tag, the OS surfaces a duplicate-item error.
-    ///    Re-read before propagating: the racing winner's key is
-    ///    semantically equivalent for DPoP, and converging on one
-    ///    key per domain is the contract callers rely on.
-    /// 4. If the second read also returns nothing, the original
-    ///    `create` failure was real (permissions, disk, etc.) —
-    ///    rethrow it.
+    /// Shared `getOrCreate` body; the caller passes in its own lock, which
+    /// stays a private stored property. On a `create` failure, re-read: a
+    /// racing writer in another instance or process may already have
+    /// committed this domain's key, and callers rely on converging on one.
     func readOrCreateUnderLock(_ lock: NSLock, domain: String) throws -> DPoPKey {
         lock.lock()
         defer { lock.unlock() }
@@ -124,13 +95,9 @@ extension DPoPKeyStore {
 // MARK: - Factory
 
 /// Picks a ``DPoPKeyStore`` for the current device. Secure Enclave
-/// availability is probed once and cached for process lifetime.
-///
-/// `nonisolated(unsafe)` is intentional: the cached `Bool` is
-/// written exactly once during lazy initialisation and then read
-/// concurrently. Annotating it explicitly silences Swift 6 strict
-/// concurrency without forcing the probe through an actor hop on
-/// every client construction.
+/// availability is probed once and cached for process lifetime;
+/// `nonisolated(unsafe)` is safe because that cached `Bool` is written
+/// exactly once on first access and only read afterwards.
 enum DPoPKeyStoreFactory {
     static func makeDefault() -> DPoPKeyStore {
         isSecureEnclaveAvailable ? SecureEnclaveDPoPKeyStore() : SoftwareDPoPKeyStore()

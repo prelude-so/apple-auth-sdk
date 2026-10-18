@@ -2,13 +2,9 @@ import Foundation
 import Security
 
 /// Per-domain stable device identifier persisted in the Keychain.
-///
-/// The id is non-secret but its stability matters: it lets the
-/// backend correlate requests from this install without relying on
-/// a cookie. `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`
-/// keeps the value off iCloud sync and out of device backups so a
-/// restored device gets a fresh id — the intended per-install
-/// identity.
+/// `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` deliberately keeps
+/// it off iCloud sync and out of backups, so a restored device gets a
+/// fresh id — the intended per-install identity.
 struct DeviceIDStore {
     private static let service = "so.prelude.auth.device_id"
 
@@ -20,12 +16,10 @@ struct DeviceIDStore {
         self.keychain = keychain
     }
 
-    /// Return the persisted id for `domain`, creating one on first
-    /// use. The in-process lock serialises callers on this store;
-    /// a peer holding a separate store instance (or an App
-    /// Extension in the same access group) can still race us, in
-    /// which case `add` returns `errSecDuplicateItem` and we
-    /// recover by re-reading so all callers converge on a single id.
+    /// Return the persisted id for `domain`, creating one on first use.
+    /// The lock covers this store instance only; another instance or
+    /// another process can still race the write, which the
+    /// `errSecDuplicateItem` path recovers from.
     func getOrCreate(domain: String) throws -> String {
         if let cached = cache.get(domain) {
             return cached

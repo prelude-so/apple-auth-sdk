@@ -1,10 +1,7 @@
 import Foundation
 
-/// Permissive HTTP `Date:` header parser. RFC 7231 §7.1.1.1 allows
-/// three formats — `IMF-fixdate` (canonical), and the obsolete
-/// `rfc850-date` and `asctime-date`. ``DateFormatter`` only matches
-/// one pattern at a time, so we try each in turn and fall through
-/// to `nil` for anything unparseable.
+/// Permissive HTTP `Date:` header parser: the three formats RFC 7231
+/// §7.1.1.1 allows, obsolete `rfc850-date` and `asctime-date` included.
 enum HTTPDate {
     static func parse(_ header: String) -> Date? {
         for formatter in formatters {

@@ -39,12 +39,12 @@ extension PreludeAuthClient {
 // MARK: - Implementation
 
 extension PreludeAuthClient.Impl {
-    /// Coherent snapshot of the cached entry: drain any in-flight
-    /// refresh, then read the cache without an expiration check.
-    /// Closes the `invalidateSession()` → accessor race by
-    /// serialising the read against the refresh cycle. No network
-    /// when no refresh is running — this stays a cheap probe.
+    /// Drains any in-flight refresh before reading, so an accessor
+    /// racing ``invalidateSession()`` sees the post-refresh entry.
     private func coherentEntry() async -> AccessTokenEntry? {
+        if sealed {
+            return nil
+        }
         await drainInflightRefresh()
         return await accessTokenCache.getWithoutExpirationCheck(domain: domain)
     }

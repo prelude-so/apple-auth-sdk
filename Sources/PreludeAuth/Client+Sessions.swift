@@ -20,18 +20,10 @@ extension PreludeAuthClient {
 
     /// Revoke one or more of the authenticated user's sessions.
     ///
-    /// Wire side effects:
-    /// - ``RevokeTarget/all`` revokes every session on the user,
-    ///   including this client's.
-    /// - ``RevokeTarget/mine`` revokes only this client's session.
-    /// - ``RevokeTarget/others`` keeps this client's session and
-    ///   revokes the rest.
-    /// - ``RevokeTarget/session(id:)`` revokes one session.
-    ///
-    /// Local side effects mirror those: when the call would
-    /// terminate this client's own session, the SDK wipes its
-    /// domain-scoped credentials too — same wipe ``logout()``
-    /// performs — so a stale refresh can't resurrect them.
+    /// When the revocation covers this client's own session, the SDK
+    /// also wipes its domain-scoped credentials — the same wipe
+    /// ``logout()`` performs — so a stale refresh can't resurrect
+    /// them.
     public func revokeSessions(_ target: RevokeTarget) async throws {
         try await impl.revokeSessions(target)
     }
@@ -85,22 +77,16 @@ extension PreludeAuthClient.Impl {
             interceptors: [autoRefreshInterceptor]
         )
 
-        // Any revocation that includes the current session
-        // must also clear this client's domain-scoped
-        // credentials; otherwise the next refresh would hit a
-        // server-revoked token and silently log the user out
-        // anyway.
+        // Revoking the current session server-side must wipe the
+        // local credentials too, or the next refresh just fails.
         guard Self.shouldWipeAfterRevoke(
             target: target,
             currentSessionID: snapshotSessionID
         ) else { return }
 
-        // Same concurrency invariants as ``logout()``. Bump the
-        // epoch *before* draining: an in-flight refresh that
-        // completes during the drain then sees the new value at
-        // its post-network guard and throws instead of persisting
-        // rotated tokens. Draining first would let those tokens
-        // hit disk only to be wiped a moment later.
+        // Bump the epoch *before* draining: a refresh completing
+        // during the drain then fails its post-network epoch guard
+        // instead of persisting tokens the wipe below would erase.
         sessionEpoch += 1
         await drainInflightRefresh()
         try await clearAllStores()
@@ -127,11 +113,8 @@ extension PreludeAuthClient.Impl {
         return items
     }
 
-    /// Pure decision so it's easy to unit-test without standing
-    /// up the network stack. `nil` `currentSessionID` is treated
-    /// as "we can't tell" — wipe defensively only on the
-    /// unconditional ``RevokeTarget/all``/``RevokeTarget/mine``
-    /// cases, never on ``RevokeTarget/session(id:)``.
+    /// A `nil` `currentSessionID` means "can't tell": wipe only on
+    /// the unconditional ``RevokeTarget/all``/``RevokeTarget/mine``.
     static func shouldWipeAfterRevoke(
         target: RevokeTarget,
         currentSessionID: String?

@@ -1,12 +1,8 @@
 import Foundation
 
-/// Stamps the persisted device id from ``DeviceIDStore`` onto every
-/// request as ``HTTPHeader/deviceID``. The store handles lazy
-/// creation and concurrent-caller convergence.
-///
-/// Best-effort: if the store throws (e.g. a Keychain fault) the
-/// request proceeds without the header — a missing device id must
-/// never fail the chain.
+/// Stamps the persisted device id from ``DeviceIDStore`` onto every request
+/// as ``HTTPHeader/deviceID``. Best-effort: a store fault (e.g. a Keychain
+/// error) must never fail the chain, so the request proceeds unstamped.
 struct DeviceIDInterceptor: Interceptor {
     let domain: String
     let store: DeviceIDStore

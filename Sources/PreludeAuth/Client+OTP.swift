@@ -86,12 +86,9 @@ extension PreludeAuthClient.Impl {
         }
         request.httpBody = try JSONEncoder().encode(CheckOTPRequestBody(code: code))
 
-        // Unauthenticated: the OTP code in the body is the entire
-        // credential. A DPoP proof has nothing legitimate to bind
-        // to here — no session key exists yet (login hasn't
-        // happened) and the challenge token only materialises in
-        // the response. The device-to-token binding happens one
-        // step later, on `/login/finalize`.
+        // Unauthenticated: no DPoP proof, since no session key exists
+        // yet. The device-to-token binding happens one step later, on
+        // `/login/finalize`.
         let (body, _) = try await httpClient.sendJSON(
             request,
             as: ChallengeTokenResponse.self
@@ -108,17 +105,13 @@ extension PreludeAuthClient.Impl {
 
     /// Exchange a challenge token for an access token, persist the
     /// issued refresh token, and return the authenticated user.
-    /// Shared between OTP, password, and migration login flows.
     ///
-    /// `codeVerifier` carries the PKCE secret paired with a
-    /// `code_challenge` sent earlier (e.g. by ``migrate(_:)``);
-    /// omit when the originating exchange didn't bind a verifier.
+    /// Pass `codeVerifier` when the originating exchange bound a PKCE
+    /// `code_challenge` (e.g. ``migrate(_:)``); omit it otherwise.
     ///
-    /// Multi-hop flows (``migrate(_:)``) pass `startEpoch` from
-    /// before their first hop so a mid-flow ``logout()`` is caught.
-    ///
-    /// Only ``finalizeLogin`` and ``refresh()`` write to the
-    /// refresh-token store.
+    /// Multi-hop flows pass `startEpoch` from before their first hop
+    /// so a mid-flow ``logout()`` is caught. Only this and the refresh
+    /// round-trip write to the refresh-token store.
     func finalizeLogin(
         challengeToken: String,
         codeVerifier: String? = nil,

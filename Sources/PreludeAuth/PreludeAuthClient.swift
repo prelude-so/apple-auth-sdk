@@ -1,12 +1,8 @@
 import Foundation
 
-/// Value-typed facade over the session actor.
-///
-/// Sendable, with a synchronous throwing init, so it propagates
-/// through SwiftUI surfaces (`@State`, `@Environment`) without
-/// ceremony and leaves room for `@Observable` adoption. Mutable
-/// state lives on a nested actor; copies of the facade share the
-/// same actor instance.
+/// Value-typed facade over the session actor. Mutable state lives on
+/// the nested actor, so copies of the facade share the same actor
+/// instance.
 public struct PreludeAuthClient: Sendable {
     let impl: Impl
 
@@ -73,6 +69,13 @@ public struct PreludeAuthClient: Sendable {
         )
     }
 
+    /// Keychain partition key for this client: the endpoint's
+    /// host, or ``hostOverride`` when one is set. Needed to scope
+    /// the app lock to the same session the client uses.
+    public var domain: String {
+        impl.domain
+    }
+
     /// Mark the local access token expired so the next protected
     /// call refreshes. Does NOT revoke the session on the server
     /// or wipe the refresh token — use ``logout()`` for that.
@@ -121,14 +124,11 @@ extension PreludeAuthClient {
         /// when set, else from ``baseURL``'s host.
         let domain: String
 
-        /// Canonical-authority hint. When set it is (1) the
-        /// Keychain partition key, (2) the DPoP `htu` authority,
-        /// and (3) written as the `Host:` header on every
-        /// outgoing request.
-        ///
-        /// Caveat: `URLSession` may silently overwrite the `Host:`
-        /// header. In practice an `/etc/hosts` entry on the
-        /// simulator plus a canonical ``baseURL`` is more reliable.
+        /// Canonical-authority hint: the Keychain partition key, the
+        /// DPoP `htu` authority, and the `Host:` header on every
+        /// outgoing request. Caveat: `URLSession` may silently
+        /// overwrite the `Host:` header, so an `/etc/hosts` entry plus
+        /// a canonical ``baseURL`` is more reliable.
         let hostOverride: String?
 
         let signalsDispatcher: PreludeSignalsDispatcher?
@@ -160,6 +160,9 @@ extension PreludeAuthClient {
         /// at entry and bails before persisting rotated tokens if
         /// logout moved the counter mid-flight.
         var sessionEpoch: Int = 0
+
+        /// No token and no protected calls until ``unseal()``.
+        var sealed = false
 
         /// In-memory step-up handle. Tracks the most recent
         /// challenge so callers can observe in-progress flows
@@ -209,16 +212,10 @@ extension PreludeAuthClient {
             self.accessTokenCache = accessTokenCache
             self.clock = clock
 
-            // Warm the in-memory cache so a cold start can render
-            // the profile and skip a refresh round-trip when valid.
-            //
-            // Fire-and-forget: the actor's queue serialises this
-            // hydrate before any subsequent isolated message from
-            // the same caller, so the typical "construct ⇒ read"
-            // path still sees the warmed entry. A first read that
-            // races ahead just costs one extra refresh round-trip,
-            // which the original synchronous warm wouldn't have
-            // saved anyway when the Keychain was empty.
+            // Warm the in-memory cache so a cold start can render the
+            // profile and skip a refresh round-trip when valid.
+            // Fire-and-forget: a read that races ahead of the hydrate
+            // just costs one extra refresh round-trip.
             Task { [accessTokenCache, derivedDomain] in
                 await accessTokenCache.hydrate(domain: derivedDomain)
             }
@@ -232,11 +229,6 @@ extension PreludeAuthClient {
         /// refresh flow. Attach alongside ``dpopInterceptor`` only
         /// on protected endpoints — unauthenticated routes (e.g.
         /// `/otp`) must not use it.
-        ///
-        /// `self` is passed strongly: the interceptor is built on
-        /// demand and lives only for the duration of the request,
-        /// so it can't extend the actor's lifetime past the
-        /// caller's.
         var autoRefreshInterceptor: AutoRefreshInterceptor {
             AutoRefreshInterceptor(refresher: self)
         }
@@ -281,11 +273,8 @@ extension PreludeAuthClient {
             return request
         }
 
-        /// Best-effort: a signals failure (network, timeout, server
-        /// error) must never block the auth flow. Anti-fraud
-        /// coverage degrades gracefully when `dispatch_id` is
-        /// missing. Cooperative cancellation still propagates so
-        /// structured concurrency stays correct.
+        /// Best-effort: a signals failure must never block the auth
+        /// flow, but cancellation still propagates.
         func dispatchSignalsIfConfigured() async throws -> String? {
             guard let signalsDispatcher else { return nil }
             do {

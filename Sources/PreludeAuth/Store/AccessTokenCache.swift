@@ -44,14 +44,9 @@ extension AccessTokenEntry: CustomReflectable {
 
 /// In-memory cache of access tokens per Prelude domain, mirrored to
 /// the Keychain so a cold start can render the profile and skip a
-/// refresh round-trip when the token is still valid.
-///
-/// Modelled as an actor: one mutable dict, no locking ceremony.
-/// Each public method runs as a single isolated unit, so the
-/// Keychain-before-memory ordering on ``set``, ``invalidate``, and
-/// ``clear`` is preserved without a manual mutex — a failed
-/// Keychain write throws before memory is touched, so memory and
-/// disk never disagree.
+/// refresh round-trip when the token is still valid. ``set``,
+/// ``invalidate``, and ``clear`` write the Keychain before memory,
+/// so memory and disk never disagree.
 actor AccessTokenCache {
     private static let service = "so.prelude.auth.access"
 
@@ -97,12 +92,9 @@ actor AccessTokenCache {
     }
 
     /// Mark the entry expired without removing it. The entry stays
-    /// retrievable via ``getWithoutExpirationCheck(domain:)``.
-    ///
-    /// Keychain before memory: a Keychain failure leaves the
-    /// in-memory snapshot intact rather than silently downgrading
-    /// while disk holds a valid entry — without this, a cold start
-    /// could resurrect the "invalidated" token.
+    /// retrievable via ``getWithoutExpirationCheck(domain:)``. Keychain
+    /// first: if the write fails, downgrading memory alone would let a
+    /// cold start rehydrate the still-valid persisted entry.
     func invalidate(domain: String) throws {
         guard let current = memory[domain] else { return }
         var invalidated = current
@@ -111,11 +103,13 @@ actor AccessTokenCache {
         memory[domain] = invalidated
     }
 
-    /// Remove the entry from both memory and the Keychain.
-    ///
-    /// Keychain before memory so a delete failure stays observable
-    /// for retry. Clearing memory first would let the next cold
-    /// start resurrect the still-persisted token.
+    /// Drop the in-memory entry, leaving the Keychain copy intact.
+    func evict(domain: String) {
+        memory.removeValue(forKey: domain)
+    }
+
+    /// Remove the entry from both memory and the Keychain. Keychain
+    /// first: clearing memory alone would let a cold start resurrect it.
     func clear(domain: String) throws {
         try deleteKeychain(domain: domain)
         memory.removeValue(forKey: domain)
