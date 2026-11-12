@@ -3,10 +3,9 @@ import LocalAuthentication
 import Security
 
 /// App-lock credentials: a passcode and an optional biometric
-/// shortcut. The passcode is never stored; it is the application
-/// password of a Keychain item, so a successful read is the
-/// verification. Attempts are counted here because a short
-/// passcode has no hardware rate limit.
+/// shortcut. A ``PasscodeBinding`` ties the passcode to its Keychain
+/// item. Attempts are counted here because a short passcode has no
+/// hardware rate limit.
 struct AppLockStore {
     static let defaultMaxAttempts = 5
 
@@ -17,15 +16,18 @@ struct AppLockStore {
     let domain: String
     let maxAttempts: Int
     private let keychain: KeychainBackend
+    private let binding: PasscodeBinding
 
     init(
         domain: String,
         maxAttempts: Int = Self.defaultMaxAttempts,
-        keychain: KeychainBackend = DefaultKeychainBackend()
+        keychain: KeychainBackend = DefaultKeychainBackend(),
+        binding: PasscodeBinding = PasscodeBindingFactory.makeDefault()
     ) {
         self.domain = domain
         self.maxAttempts = maxAttempts
         self.keychain = keychain
+        self.binding = binding
     }
 
     // MARK: - Passcode
@@ -39,14 +41,7 @@ struct AppLockStore {
         guard passcode.count >= 4 else {
             throw PreludeAuthError.invalidPasscode("A passcode needs at least 4 digits")
         }
-        guard let access = Self.accessControl(.applicationPassword) else {
-            throw PreludeAuthError.lockUnavailable("Cannot create the passcode's access control")
-        }
-
-        var attributes = query(service: Self.passcodeService)
-        attributes[kSecValueData as String] = Self.randomBytes()
-        attributes[kSecAttrAccessControl as String] = access
-        attributes[kSecUseAuthenticationContext as String] = try Self.context(passcode: passcode)
+        let attributes = try query(service: Self.passcodeService).merging(binding.seal(passcode)) { _, new in new }
 
         // Fallible prep is done; only now replace the old credentials.
         _ = keychain.delete(query(service: Self.passcodeService))
@@ -73,21 +68,17 @@ struct AppLockStore {
         var lookup = query(service: Self.passcodeService)
         lookup[kSecReturnData as String] = true
         lookup[kSecMatchLimit as String] = kSecMatchLimitOne
-        lookup[kSecUseAuthenticationContext as String] = try Self.context(passcode: passcode)
 
-        // A wrong application password is a failed decryption or,
-        // with interaction off, a refused prompt.
-        let read: CFTypeRef?
+        let opened: Bool
         do {
-            read = try keychain.copyMatching(lookup)
-        } catch DPoPKeyStoreError.keychainFailure(errSecAuthFailed),
-            DPoPKeyStoreError.keychainFailure(errSecInteractionNotAllowed) {
-            read = nil
+            opened = try binding.opens(lookup, with: passcode, in: keychain)
+        } catch let error as PreludeAuthError {
+            throw error
         } catch {
             throw PreludeAuthError.lockUnavailable("Cannot read the passcode item: \(error)")
         }
 
-        guard read != nil else {
+        guard opened else {
             try setAttempts(spent + 1)
             if spent + 1 >= maxAttempts {
                 throw PreludeAuthError.lockedOut("Too many attempts")
@@ -229,7 +220,7 @@ struct AppLockStore {
         }
     }
 
-    private static func accessControl(_ flags: SecAccessControlCreateFlags) -> SecAccessControl? {
+    static func accessControl(_ flags: SecAccessControlCreateFlags) -> SecAccessControl? {
         SecAccessControlCreateWithFlags(
             nil,
             kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
@@ -238,17 +229,7 @@ struct AppLockStore {
         )
     }
 
-    /// Pure decryption; no system sheet.
-    private static func context(passcode: String) throws -> LAContext {
-        let context = LAContext()
-        guard context.setCredential(Data(passcode.utf8), type: .applicationPassword) else {
-            throw PreludeAuthError.lockUnavailable("This device cannot bind an application password")
-        }
-        context.interactionNotAllowed = true
-        return context
-    }
-
-    private static func randomBytes() -> Data {
+    static func randomBytes() -> Data {
         var bytes = [UInt8](repeating: 0, count: 32)
         if SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) != errSecSuccess {
             bytes = (0 ..< 32).map { _ in UInt8.random(in: .min ... .max) }

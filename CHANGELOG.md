@@ -4,6 +4,16 @@ Notable changes to `PreludeAuth` (the Prelude Apple Auth SDK).
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] - 2026-11-12
+
+### Fixed
+- Idle lock on the iOS Simulator. `setPasscode(_:)` always failed
+  there with `lockUnavailable` ("This device cannot bind an
+  application password"), because the Simulator has no Keychain
+  application passwords. On the Simulator the passcode is now checked
+  against a salted digest in the Keychain. Devices keep the
+  application password, so nothing changes on a device.
+
 ## [0.8.0] - 2026-10-16
 
 ### Added
