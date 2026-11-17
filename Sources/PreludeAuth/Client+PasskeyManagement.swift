@@ -30,13 +30,12 @@ extension PreludeAuthClient.Impl {
         try await httpClient.sendExpectingNoBody(request, interceptors: [autoRefreshInterceptor])
 
         // Removing the last passkey may flip the has_passkey claim.
-        try await refreshAfterPasskeyMutation()
+        await refreshAfterClaimChange()
     }
 
-    /// Force the next access token to reflect a changed
-    /// `has_passkey` claim.
-    func refreshAfterPasskeyMutation() async throws {
-        try await invalidateSession()
-        _ = try await refresh()
+    /// Best-effort: the server change already landed.
+    func refreshAfterClaimChange() async {
+        try? await invalidateSession()
+        _ = try? await refresh()
     }
 }

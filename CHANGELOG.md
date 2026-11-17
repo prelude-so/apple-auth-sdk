@@ -4,6 +4,37 @@ Notable changes to `PreludeAuth` (the Prelude Apple Auth SDK).
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-11-17
+
+### Changed
+- `PreludeSignalsAdapter(sdkKey:)`: the key is optional. Without it,
+  the adapter reads `PreludeSDKKey` from the app's `Info.plist`. With
+  no key in either place it does nothing.
+- `PreludeAuthClient` uses a `PreludeSignalsAdapter` when no
+  `signalsDispatcher` is passed. An app that has the `Info.plist` key
+  sends signals with unauthenticated logins without more code.
+- A signals dispatch through `PreludeSignalsAdapter` is limited to its
+  timeout (5 seconds by default). A late or failed dispatch does not
+  block the login.
+- The package accepts newer patch releases of the Prelude Apple SDK
+  instead of one exact version.
+
+### Fixed
+- Session lost until the next launch when the first Keychain read
+  failed, for example when the app started before the first unlock
+  after a reboot. `profile`, `accessToken` and `sessionID` returned
+  `nil` although the session was still stored. The access token is
+  now read on first use, and a failed read is tried again.
+- `registerPasskey(_:)` and `deletePasskey(_:)` threw when the
+  refresh that follows them failed, although the passkey change had
+  already succeeded on the server. That refresh is now best-effort.
+- Idle lock on launch. `start()` set `isLocked` a moment after it
+  returned, so the app could draw one unlocked frame. When called on
+  the main thread, `isLocked` is now `true` before `start()` returns.
+- A 401 on a protected call no longer expires an access token that a
+  concurrent call has just refreshed, so concurrent 401s cost one
+  refresh instead of several.
+
 ## [0.8.1] - 2026-11-12
 
 ### Fixed

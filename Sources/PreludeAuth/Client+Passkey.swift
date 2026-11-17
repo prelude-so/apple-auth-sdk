@@ -119,7 +119,7 @@ extension PreludeAuthClient.Impl {
 
         // A new passkey may flip the has_passkey claim; refresh so
         // the next access token reflects it.
-        try await refreshAfterPasskeyMutation()
+        await refreshAfterClaimChange()
 
         return PasskeyRegistrationResult(
             credential: PasskeyCredential(finish.credential),
