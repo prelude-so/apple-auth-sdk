@@ -31,17 +31,33 @@
 
         /// `lockOnStart` seals in ``start()`` so relaunching is not a
         /// way past the lock; pass `false` when rebuilding mid-session.
-        public init(
+        public convenience init(
             client: PreludeAuthClient,
             threshold: TimeInterval,
             unlockReason: String = "Unlock to continue",
             lockOnStart: Bool = true,
             maxAttempts: Int = PreludeIdleLock.defaultMaxAttempts
         ) {
+            self.init(
+                client: client,
+                store: AppLockStore(domain: client.domain, maxAttempts: maxAttempts),
+                threshold: threshold,
+                unlockReason: unlockReason,
+                lockOnStart: lockOnStart
+            )
+        }
+
+        /// Test-only init that takes an injected store.
+        init(
+            client: PreludeAuthClient,
+            store: AppLockStore,
+            threshold: TimeInterval,
+            unlockReason: String = "Unlock to continue",
+            lockOnStart: Bool = true
+        ) {
             self.client = client
             self.unlockReason = unlockReason
             self.lockOnStart = lockOnStart
-            let store = AppLockStore(domain: client.domain, maxAttempts: maxAttempts)
             self.store = store
             isEnabled = store.hasPasscode
             isBiometricsEnabled = store.isBiometricsEnabled
@@ -122,9 +138,7 @@
             guard !alreadyStarted, lockOnStart, isEnabled else {
                 return
             }
-            Task { @MainActor [weak self] in
-                await self?.lock()
-            }
+            sealPublishingFirst()
         }
 
         public func stop() {
@@ -193,14 +207,18 @@
                 return
             }
 
-            // Published before the app draws, so no view reads session
-            // state unlocked. Withdrawn if there was nothing to seal.
-            isLocked = true
-            Task { [weak self, client] in
+            sealPublishingFirst()
+        }
+
+        /// Published before the app draws, so no view reads session
+        /// state unlocked. Withdrawn if there was nothing to seal.
+        private func sealPublishingFirst() {
+            if Thread.isMainThread {
+                isLocked = true
+            }
+            Task { @MainActor [weak self, client] in
                 let sealed = await client.seal()
-                if !sealed {
-                    await MainActor.run { self?.isLocked = false }
-                }
+                self?.isLocked = sealed
             }
         }
     }

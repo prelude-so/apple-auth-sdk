@@ -1,8 +1,9 @@
 import Foundation
 
 /// Attaches `Authorization: Bearer <access token>` and recovers from
-/// 401 responses by invalidating the cache, refreshing, and retrying
-/// once. If the refresh fails, returns the original 401 (not the
+/// 401 responses by expiring the rejected token (only if it is still
+/// cached), refreshing when needed, and retrying once.
+/// If the refresh fails, returns the original 401 (not the
 /// retry response, never a thrown error) so upstream retry loops
 /// treat auth failure as non-transient.
 struct AutoRefreshInterceptor: Interceptor {
@@ -27,17 +28,11 @@ struct AutoRefreshInterceptor: Interceptor {
             return (data, response)
         }
 
-        // A sibling caller may have refreshed while our 401 was in flight.
-        // `invalidateCurrentToken` only mutates `expiresAt`, so invalidating
-        // an already-refreshed token would clobber it back to expired.
-        if let fresh = try await refresher.currentAccessToken(),
-           !fresh.isEmpty, fresh != sentToken {
-            var retryRequest = request
-            retryRequest.setValue("Bearer \(fresh)", forHTTPHeaderField: HTTPHeader.authorization)
-            return try await next(retryRequest)
-        }
-
-        try await refresher.invalidateCurrentToken()
+        // A sibling caller may have refreshed while our 401 was in
+        // flight: then its token is kept and returned without a new
+        // refresh. Outside the `do`: a storage failure or
+        // `sessionLocked` must reach the caller, not look like a 401.
+        try await refresher.invalidateAccessToken(ifMatching: sentToken)
 
         let newToken: String
         do {

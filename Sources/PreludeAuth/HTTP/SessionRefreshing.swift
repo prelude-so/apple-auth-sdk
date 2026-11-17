@@ -1,20 +1,20 @@
 import Foundation
 
 /// Auth-state surface the ``AutoRefreshInterceptor`` calls into to
-/// fetch the current bearer, invalidate it on a 401, and trigger a
-/// refresh.
+/// fetch the current bearer and recover from a 401.
 protocol SessionRefreshing: Sendable {
     /// Cached access token, ignoring expiration. `nil` when no
     /// session is active; the interceptor then omits `Authorization`.
     func currentAccessToken() async throws -> String?
 
-    /// Mark the cached access token stale after a 401, so the
-    /// next protected call refreshes.
-    func invalidateCurrentToken() async throws
+    /// Mark `token` stale after a 401 if it is still the cached one.
+    /// Throws `sessionLocked` on a sealed client, also when `token`
+    /// is nil.
+    func invalidateAccessToken(ifMatching token: String?) async throws
 
-    /// Refresh and return the new access token. Concurrent
-    /// callers must be coalesced inside the conformer — refresh
-    /// tokens are single-use and a double-spend revokes the
+    /// Return a valid access token, refreshing when needed.
+    /// Concurrent callers must be coalesced inside the conformer —
+    /// refresh tokens are single-use and a double-spend revokes the
     /// session.
     func refreshAccessToken() async throws -> String
 }
@@ -27,8 +27,10 @@ extension PreludeAuthClient.Impl: SessionRefreshing {
         return await accessTokenCache.getWithoutExpirationCheck(domain: domain)?.accessToken
     }
 
-    func invalidateCurrentToken() async throws {
-        try await invalidateSession()
+    func invalidateAccessToken(ifMatching token: String?) async throws {
+        try requireUnsealed()
+        guard let token, !token.isEmpty else { return }
+        try await accessTokenCache.invalidate(domain: domain, ifMatching: token)
     }
 
     func refreshAccessToken() async throws -> String {

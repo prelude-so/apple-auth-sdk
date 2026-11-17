@@ -16,8 +16,10 @@ public struct PreludeAuthClient: Sendable {
     ///     differs from what the server sees (e.g. localhost
     ///     forwarding behind a reverse proxy). `nil` derives
     ///     these from the endpoint's host.
-    ///   - signalsDispatcher: optional anti-fraud dispatcher
-    ///     wired into unauthenticated login calls.
+    ///   - signalsDispatcher: anti-fraud dispatcher wired into
+    ///     unauthenticated login calls. When `nil`, the client
+    ///     uses a ``PreludeSignalsAdapter`` with the SDK key of
+    ///     `Info.plist`, which does nothing when there is no key.
     ///   - timeout: per-request timeout, in seconds.
     ///   - allowInsecureTLS: trust every server cert. Local
     ///     development only.
@@ -31,7 +33,7 @@ public struct PreludeAuthClient: Sendable {
         impl = try Impl(
             baseURL: endpoint.resolveBaseURL(),
             hostOverride: hostOverride,
-            signalsDispatcher: signalsDispatcher,
+            signalsDispatcher: signalsDispatcher ?? PreludeSignalsAdapter(),
             timeout: timeout,
             httpSession: URLSessionHTTPSession(allowInsecureTLS: allowInsecureTLS),
             clock: defaultNowProvider,
@@ -211,14 +213,6 @@ extension PreludeAuthClient {
             self.refreshTokenStore = refreshTokenStore
             self.accessTokenCache = accessTokenCache
             self.clock = clock
-
-            // Warm the in-memory cache so a cold start can render the
-            // profile and skip a refresh round-trip when valid.
-            // Fire-and-forget: a read that races ahead of the hydrate
-            // just costs one extra refresh round-trip.
-            Task { [accessTokenCache, derivedDomain] in
-                await accessTokenCache.hydrate(domain: derivedDomain)
-            }
         }
 
         var dpopInterceptor: DPoPInterceptor {

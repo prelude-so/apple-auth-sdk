@@ -53,6 +53,7 @@ actor AccessTokenCache {
     private let clock: NowProvider
     private let keychain: KeychainBackend
     private var memory: [String: AccessTokenEntry] = [:]
+    private var loaded: Set<String> = []
 
     init(
         clock: @escaping NowProvider = defaultNowProvider,
@@ -62,17 +63,26 @@ actor AccessTokenCache {
         self.keychain = keychain
     }
 
-    /// Populate memory from the Keychain. Best-effort; any failure
-    /// leaves the cache empty. Call once per domain at client init.
+    /// Reload from the Keychain after ``evict(domain:)``.
     func hydrate(domain: String) {
-        if let entry = try? readKeychain(domain: domain) {
-            memory[domain] = entry
-        }
+        loaded.remove(domain)
+        load(domain: domain)
+    }
+
+    /// Reads the Keychain once per domain. A failed read (Keychain
+    /// still locked) is tried again on the next access.
+    private func load(domain: String) {
+        guard !loaded.contains(domain) else { return }
+        do {
+            memory[domain] = try readKeychain(domain: domain)
+            loaded.insert(domain)
+        } catch {}
     }
 
     /// Cached entry, or `nil` if none or expired. Strict `<`:
     /// equality is still valid.
     func get(domain: String) -> AccessTokenEntry? {
+        load(domain: domain)
         guard let entry = memory[domain] else { return nil }
         return entry.expiresAt < Int(clock().timeIntervalSince1970) ? nil : entry
     }
@@ -81,7 +91,8 @@ actor AccessTokenCache {
     /// this so the app can render the logged-in user while a
     /// refresh is in flight.
     func getWithoutExpirationCheck(domain: String) -> AccessTokenEntry? {
-        memory[domain]
+        load(domain: domain)
+        return memory[domain]
     }
 
     /// Persist a new entry. Keychain write before in-memory update —
@@ -96,6 +107,7 @@ actor AccessTokenCache {
     /// first: if the write fails, downgrading memory alone would let a
     /// cold start rehydrate the still-valid persisted entry.
     func invalidate(domain: String) throws {
+        load(domain: domain)
         guard let current = memory[domain] else { return }
         var invalidated = current
         invalidated.expiresAt = Int(clock().timeIntervalSince1970) - 1
@@ -103,8 +115,17 @@ actor AccessTokenCache {
         memory[domain] = invalidated
     }
 
+    /// Invalidate only while the cached access token is still
+    /// `expected`: a token a concurrent caller just refreshed must
+    /// not be expired by a 401 for the token it replaced.
+    func invalidate(domain: String, ifMatching expected: String) throws {
+        guard memory[domain]?.accessToken == expected else { return }
+        try invalidate(domain: domain)
+    }
+
     /// Drop the in-memory entry, leaving the Keychain copy intact.
     func evict(domain: String) {
+        loaded.insert(domain)
         memory.removeValue(forKey: domain)
     }
 

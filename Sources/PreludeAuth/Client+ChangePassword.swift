@@ -52,8 +52,7 @@ extension PreludeAuthClient.Impl {
 
         // Drop `prld:pwd:write` locally so a leaked token can't
         // change the password again without re-stepping up.
-        try? await invalidateSession()
-        _ = try? await refresh()
+        await refreshAfterClaimChange()
     }
 
     func canChangePassword() async throws -> Bool {

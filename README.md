@@ -162,6 +162,27 @@ let user = try await client.migrate(MigrateOptions(token: "legacy-bearer"))
 
 Idempotent: a valid cached session short-circuits the network call, so it is safe to call on every launch.
 
+#### Anti-fraud signals
+
+The client sends anti-fraud signals with unauthenticated logins when
+it finds a Prelude SDK key. Add the key to `Info.plist`:
+
+```xml
+<key>PreludeSDKKey</key>
+<string>sdk_XXXXXXXXXXXXXXXX</string>
+```
+
+With no key, no signals are sent and login works as before. To pass
+the key in code instead, give the client a `PreludeSignalsAdapter`;
+a key passed in code wins over `Info.plist`:
+
+```swift
+let client = try PreludeAuthClient(
+    endpoint: .custom("https://<your-app>.session.prelude.dev"),
+    signalsDispatcher: PreludeSignalsAdapter(sdkKey: fetchedKey)
+)
+```
+
 #### Endpoint configuration
 
 ```
