@@ -139,7 +139,7 @@ extension PreludeAuthClient.Impl {
 
         let (body, http) = try await httpClient.sendJSON(
             request,
-            interceptors: [dpopInterceptor],
+            interceptors: [deviceProofInterceptor(.login, challengeToken: challengeToken), dpopInterceptor],
             as: RefreshTokenResponse.self
         )
 

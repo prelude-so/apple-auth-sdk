@@ -98,6 +98,7 @@ extension PreludeAuthError {
             return .badRequest(message)
         case "unauthorized",
              "invalid_dpop_proof",
+             "invalid_device_proof",
              "dpop_key_mismatch",
              "missing_dpop_proof",
              "use_dpop_nonce":

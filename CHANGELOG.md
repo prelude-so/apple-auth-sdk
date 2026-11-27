@@ -4,6 +4,16 @@ Notable changes to `PreludeAuth` (the Prelude Apple Auth SDK).
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] - 2026-11-27
+
+### Added
+- Device key. The SDK creates one key per app install in the Secure
+  Enclave (a software Keychain key where none is available) and keeps it after
+  `logout()`. `/login/finalize` and step-up requests carry a proof
+  signed by this key, and your backend gets its ID as `device_key_id`.
+- `resetDeviceKey()` deletes the device key, so the next sign-in gives
+  a new `device_key_id`.
+
 ## [0.9.0] - 2026-11-17
 
 ### Changed

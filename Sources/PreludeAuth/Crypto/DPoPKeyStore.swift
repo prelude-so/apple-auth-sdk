@@ -104,7 +104,7 @@ enum DPoPKeyStoreFactory {
     }
 
     // swiftformat:disable:next modifierOrder
-    nonisolated(unsafe) private static let isSecureEnclaveAvailable: Bool = probeSecureEnclave()
+    nonisolated(unsafe) static let isSecureEnclaveAvailable: Bool = probeSecureEnclave()
 
     private static func probeSecureEnclave() -> Bool {
         var acError: Unmanaged<CFError>?

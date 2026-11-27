@@ -5,11 +5,6 @@ import Foundation
 /// caused by clock drift so we don't retry.
 private let clockSkewRetryThresholdSec: TimeInterval = 1.0
 
-/// Upper bound on the body size we attempt to decode as an API
-/// error. Caps the cost of a misbehaving server returning a giant
-/// non-JSON 4xx page.
-private let maxErrorBodyBytes = 4 * 1024
-
 /// Signs outgoing requests with a DPoP proof and retries once on
 /// ``use_dpop_nonce`` or — when the device clock has drifted past
 /// ``clockSkewRetryThresholdSec`` — on ``invalid_dpop_proof``. The
@@ -55,9 +50,7 @@ struct DPoPInterceptor: Interceptor {
         // or clock skew) and read any rotated nonce from the store.
         let rotatedNonce = try harvestNonce(from: response)
 
-        if !(200 ..< 300).contains(response.statusCode),
-           data.count <= maxErrorBodyBytes,
-           let apiError = try? JSONDecoder().decode(APIErrorJSON.self, from: data) {
+        if let apiError = APIErrorJSON.decode(data, response: response) {
             if apiError.code == "use_dpop_nonce" {
                 return try await retryWithNonce(
                     request: request,

@@ -25,7 +25,6 @@ enum PKCE {
     /// S256 transform per RFC 7636 §4.2: SHA-256 of the verifier's
     /// ASCII bytes, base64url-encoded.
     static func codeChallenge(for verifier: String) -> String {
-        let digest = SHA256.hash(data: Data(verifier.utf8))
-        return Data(digest).base64URLEncodedString()
+        Data.sha256Base64URL(verifier)
     }
 }

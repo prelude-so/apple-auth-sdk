@@ -177,9 +177,10 @@ extension PreludeAuthClient.Impl {
             keyStore: keyStore,
             challengeToken: challenge.token
         )
+        let deviceProof = deviceProofInterceptor(.stepUp, challengeToken: challenge.token)
         let interceptors: [Interceptor] = bearerAuthenticated
-            ? [autoRefreshInterceptor, challengeDPoP]
-            : [challengeDPoP]
+            ? [autoRefreshInterceptor, deviceProof, challengeDPoP]
+            : [deviceProof, challengeDPoP]
 
         let (body, http) = try await httpClient.sendJSON(
             request,

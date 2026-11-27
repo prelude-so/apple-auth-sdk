@@ -54,8 +54,15 @@ struct DefaultDPoPProofBuilder: DPoPProofBuilder {
             payload["nonce"] = nonce
         }
 
-        let encodedHeader = try Self.jsonData(header).base64URLEncodedString()
-        let encodedPayload = try Self.jsonData(payload).base64URLEncodedString()
+        return try JWS.compactES256(header: header, payload: payload, key: key)
+    }
+}
+
+/// Compact ES256 JWS shared by the DPoP and device proofs.
+enum JWS {
+    static func compactES256(header: [String: Any], payload: [String: Any], key: DPoPKey) throws -> String {
+        let encodedHeader = try jsonData(header).base64URLEncodedString()
+        let encodedPayload = try jsonData(payload).base64URLEncodedString()
         let signingInput = "\(encodedHeader).\(encodedPayload)"
         let signature = try key.signES256(Data(signingInput.utf8))
         return "\(signingInput).\(signature.base64URLEncodedString())"
@@ -63,7 +70,7 @@ struct DefaultDPoPProofBuilder: DPoPProofBuilder {
 
     /// Deterministic JSON bytes (sorted keys) so signatures are
     /// reproducible.
-    private static func jsonData(_ object: [String: Any]) throws -> Data {
+    static func jsonData(_ object: [String: Any]) throws -> Data {
         do {
             return try JSONSerialization.data(
                 withJSONObject: object,
