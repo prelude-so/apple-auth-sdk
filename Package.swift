@@ -20,7 +20,7 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/prelude-so/apple-sdk.git",
-            .upToNextMinor(from: "0.6.0")
+            .upToNextMinor(from: "0.6.1")
         ),
     ],
     targets: [

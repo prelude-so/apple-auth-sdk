@@ -40,7 +40,8 @@ public struct PreludeAuthClient: Sendable {
             keyStore: DPoPKeyStoreFactory.makeDefault(),
             refreshTokenStore: RefreshTokenStore(),
             accessTokenCache: AccessTokenCache(),
-            deviceIDStore: DeviceIDStore()
+            deviceIDStore: DeviceIDStore(),
+            deviceKeyStore: DeviceKeyStore.makeDefault()
         )
     }
 
@@ -55,7 +56,8 @@ public struct PreludeAuthClient: Sendable {
         keyStore: DPoPKeyStore,
         refreshTokenStore: RefreshTokenStore,
         accessTokenCache: AccessTokenCache,
-        deviceIDStore: DeviceIDStore
+        deviceIDStore: DeviceIDStore,
+        deviceKeyStore: DeviceKeyStore
     ) throws {
         impl = try Impl(
             baseURL: baseURL,
@@ -67,7 +69,8 @@ public struct PreludeAuthClient: Sendable {
             keyStore: keyStore,
             refreshTokenStore: refreshTokenStore,
             accessTokenCache: accessTokenCache,
-            deviceIDStore: deviceIDStore
+            deviceIDStore: deviceIDStore,
+            deviceKeyStore: deviceKeyStore
         )
     }
 
@@ -141,6 +144,7 @@ extension PreludeAuthClient {
         let keyStore: DPoPKeyStore
         let refreshTokenStore: RefreshTokenStore
         let accessTokenCache: AccessTokenCache
+        let deviceKeyStore: DeviceKeyStore
         let clock: NowProvider
 
         /// Concurrent callers (explicit ``refresh()`` and the
@@ -181,7 +185,8 @@ extension PreludeAuthClient {
             keyStore: DPoPKeyStore,
             refreshTokenStore: RefreshTokenStore,
             accessTokenCache: AccessTokenCache,
-            deviceIDStore: DeviceIDStore
+            deviceIDStore: DeviceIDStore,
+            deviceKeyStore: DeviceKeyStore
         ) throws {
             let derivedDomain: String
             if let hostOverride, !hostOverride.isEmpty {
@@ -212,11 +217,25 @@ extension PreludeAuthClient {
             self.keyStore = keyStore
             self.refreshTokenStore = refreshTokenStore
             self.accessTokenCache = accessTokenCache
+            self.deviceKeyStore = deviceKeyStore
             self.clock = clock
         }
 
         var dpopInterceptor: DPoPInterceptor {
             DPoPInterceptor(domain: domain, keyStore: keyStore)
+        }
+
+        func deviceProofInterceptor(
+            _ mode: DeviceProofInterceptor.Mode,
+            challengeToken: String
+        ) -> DeviceProofInterceptor {
+            DeviceProofInterceptor(
+                mode: mode,
+                domain: domain,
+                keyStore: keyStore,
+                deviceKeyStore: deviceKeyStore,
+                challengeToken: challengeToken
+            )
         }
 
         /// Auto-refresh interceptor bound to this actor's cache and

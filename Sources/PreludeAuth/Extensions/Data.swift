@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 extension Data {
@@ -9,6 +10,14 @@ extension Data {
         let paddingLength = (4 - normalized.count % 4) % 4
         normalized += String(repeating: "=", count: paddingLength)
         return Data(base64Encoded: normalized)
+    }
+
+    static func sha256Base64URL(_ string: String) -> String {
+        Data(string.utf8).sha256Base64URLEncodedString()
+    }
+
+    func sha256Base64URLEncodedString() -> String {
+        Data(SHA256.hash(data: self)).base64URLEncodedString()
     }
 
     /// Encode as Base64URL (RFC 4648 §5).
